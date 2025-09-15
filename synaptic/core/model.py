@@ -52,15 +52,16 @@ class Model:
 
         return results
 
-    def invoke(self, prompt: str, **kwargs) -> ResponseMem:
+    def invoke(self, prompt: str, autorun: bool = False, **kwargs) -> ResponseMem:
         llm = self._initiate_model()
         memory = llm.invoke(prompt, **kwargs)
 
-        if memory.tool_calls:
-            tool_results = self._run_tools(memory.tool_calls)
-            # Attach results for downstream use
-            memory.tool_results = tool_results  # optional extra field
-        else:
-            memory.tool_results = []
+        if autorun:
+            if memory.tool_calls:
+                tool_results = self._run_tools(memory.tool_calls)
+                # Attach results for downstream use
+                memory.tool_results = tool_results  # optional extra field
+            else:
+                memory.tool_results = []
 
         return memory
