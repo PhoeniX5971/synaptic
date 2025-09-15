@@ -1,7 +1,7 @@
 from typing import List, Any
 from ..providers import GeminiAdapter, OpenAIAdapter
 
-from .base import BaseModel, ResponseMem
+from .base import BaseModel, History, ResponseMem
 from .provider import Provider
 from .tool import Tool
 
@@ -14,12 +14,18 @@ class Model:
         temperature: float = 0.8,
         max_tokens: int = 1024,
         tools: List[Tool] = None,  # type: ignore
+        history: History = None,  # type: ignore
+        autorun: bool = False,
+        automem: bool = False,
     ) -> None:
         self.provider = provider
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.tools = tools or []
+        self.history: History = history or History()
+        self.autorun = autorun
+        self.automem = automem
         self._initiate_model()
 
     def bind_tools(self, tools: List[Tool]):
@@ -52,16 +58,24 @@ class Model:
 
         return results
 
-    def invoke(self, prompt: str, autorun: bool = False, **kwargs) -> ResponseMem:
+    def invoke(
+        self, prompt: str, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+    ) -> ResponseMem:
         llm = self._initiate_model()
         memory = llm.invoke(prompt, **kwargs)
+
+        autorun = autorun if (autorun is not None) else self.autorun
+        automem = automem if (automem is not None) else self.automem
 
         if autorun:
             if memory.tool_calls:
                 tool_results = self._run_tools(memory.tool_calls)
                 # Attach results for downstream use
                 memory.tool_results = tool_results  # optional extra field
-            else:
-                memory.tool_results = []
+        else:
+            memory.tool_results = []
+
+        if automem:
+            self.history.add(memory)
 
         return memory

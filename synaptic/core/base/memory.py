@@ -1,13 +1,19 @@
+from typing import List
+
+
 class Memory:
     def __init__(self, message: str, created, role: str):
         self.message = message
         self.created = created
         self.role = role
 
+    def __repr__(self):
+        return f"<Memory role={self.role} message={self.message[:30]!r}>"
+
 
 class ResponseMem(Memory):
     def __init__(
-        self, message: str, created, tool_calls, tool_results=None, role="assistant"
+        self, message: str, created, tool_calls, tool_results=[], role="assistant"
     ):
         super().__init__(message, created, role)
         self.tool_calls = tool_calls
@@ -20,8 +26,20 @@ class UserMem(Memory):
 
 
 class History:
-    MemoryList: list[Memory] = []
+    def __init__(self, memoryList: List[Memory] = [], size: int = 10):
+        self.MemoryList: list[Memory] = memoryList
+        self.size = size
+
+    def _size_update(self):
+        if len(self.MemoryList) > self.size:
+            self.MemoryList.pop(0)
 
     def window(self, size: int) -> list[Memory]:
-        """Get the most recent `size` memories."""
-        return self.MemoryList[-size:] if size > 0 else self.MemoryList
+        """Modify window size."""
+        self.size = size
+        self._size_update()
+        return self.MemoryList
+
+    def add(self, memory: Memory) -> None:
+        self.MemoryList.append(memory)
+        self._size_update()

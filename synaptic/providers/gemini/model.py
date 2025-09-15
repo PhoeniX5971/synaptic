@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import google.genai as genai
 from google.genai import types
 
-from ...core.base import BaseModel, ResponseMem
+from ...core.base import BaseModel, ResponseMem, History
 
 load_dotenv()
 
