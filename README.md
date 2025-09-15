@@ -54,3 +54,6 @@ pip install -e .
 ## 🛠 Usage
 
 ---
+
+> [!Note]
+> This is an ai generated readme it's trash i will fix soon.
