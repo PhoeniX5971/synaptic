@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "synaptic"
+version = "0.1.0"
+description = "An orchestration framework for large language models"
+authors = [{ name = "phoenix5971" }]
+dependencies = ["openai", "google-generativeai", "google-genai", "dotenv"]
