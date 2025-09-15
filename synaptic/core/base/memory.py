@@ -8,7 +8,9 @@ class Memory:
         self.role = role
 
     def __repr__(self):
-        return f"<Memory role={self.role} message={self.message[:30]!r}>"
+        return (
+            f"<Memory role={self.role} message={self.message!r} created={self.created}>"
+        )
 
 
 class ResponseMem(Memory):
@@ -18,6 +20,9 @@ class ResponseMem(Memory):
         super().__init__(message, created, role)
         self.tool_calls = tool_calls
         self.tool_results = tool_results
+
+    def __repr__(self):
+        return f"<Memory role={self.role} message={self.message!r} created={self.created} tool_calls={self.tool_calls} tool_results={self.tool_results}>"
 
 
 class UserMem(Memory):

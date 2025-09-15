@@ -35,9 +35,19 @@ class Model:
         if self.provider == Provider.OPENAI:
             return OpenAIAdapter(model=self.model, tools=self.tools)
         elif self.provider == Provider.GEMINI:
-            return GeminiAdapter(model=self.model, tools=self.tools)
+            return GeminiAdapter(
+                self.model,
+                temperature=self.temperature,
+                tools=self.tools,
+                history=self.history,
+            )
         else:
-            return GeminiAdapter(self.model, tools=self.tools)
+            return GeminiAdapter(
+                self.model,
+                temperature=self.temperature,
+                tools=self.tools,
+                history=self.history,
+            )
 
     def _run_tools(self, tool_calls: List[dict[str, Any]]) -> List[Any]:
         """Run tool calls returned by the model."""
