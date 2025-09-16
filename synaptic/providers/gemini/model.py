@@ -13,10 +13,11 @@ class GeminiAdapter(BaseModel):
         self,
         model: str,
         history: History,
+        api_key: str,
         temperature: float = 0.8,
         tools: list | None = None,
     ):
-        self.client = genai.Client()
+        self.client = genai.Client(api_key=api_key)
         self.model = model
         self.tools = tools or []
         self.temperature = temperature
@@ -63,10 +64,9 @@ class GeminiAdapter(BaseModel):
     def invoke(self, prompt: str, **kwargs) -> ResponseMem:
         # Build config with tools if any
         tools = self._convert_tools()
-        config = (
-            types.GenerateContentConfig(temperature=self.temperature, tools=tools)
-            if self.tools
-            else None
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            tools=tools,
         )
 
         contents = self.to_contents()

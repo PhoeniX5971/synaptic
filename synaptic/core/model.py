@@ -12,6 +12,7 @@ class Model:
         provider: Provider,
         model: str,
         temperature: float = 0.8,
+        api_key: str = "",  # type: ignore
         max_tokens: int = 1024,
         tools: List[Tool] = None,  # type: ignore
         history: History = None,  # type: ignore
@@ -21,6 +22,9 @@ class Model:
         self.provider = provider
         self.model = model
         self.temperature = temperature
+        if api_key == "":
+            raise ValueError("API key must be provided")
+        self.api_key = api_key
         self.max_tokens = max_tokens
         self.tools = tools or []
         self.history: History = history or History()
@@ -33,20 +37,28 @@ class Model:
 
     def _initiate_model(self) -> BaseModel:
         if self.provider == Provider.OPENAI:
-            return OpenAIAdapter(model=self.model, tools=self.tools)
-        elif self.provider == Provider.GEMINI:
-            return GeminiAdapter(
-                self.model,
+            return OpenAIAdapter(
+                model=self.model,
                 temperature=self.temperature,
                 tools=self.tools,
                 history=self.history,
+                api_key=self.api_key,
+            )
+        elif self.provider == Provider.GEMINI:
+            return GeminiAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=self.tools,
+                history=self.history,
+                api_key=self.api_key,
             )
         else:
             return GeminiAdapter(
-                self.model,
+                model=self.model,
                 temperature=self.temperature,
                 tools=self.tools,
                 history=self.history,
+                api_key=self.api_key,
             )
 
     def _run_tools(self, tool_calls: List[dict[str, Any]]) -> List[Any]:

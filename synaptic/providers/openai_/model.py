@@ -1,22 +1,43 @@
 import json
 from datetime import datetime, timezone
 from typing import List
+from openai import OpenAI
+from openai.types.chat import (
+    ChatCompletionMessageParam,
+    ChatCompletionUserMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionToolMessageParam,
+)
 
 from dotenv import load_dotenv
 
-from ...core.base import BaseModel, ResponseMem
-from ...core.tool import Tool
+from ...core.base import BaseModel, ResponseMem, History
 
 load_dotenv()
 
 
 class OpenAIAdapter(BaseModel):
-    def __init__(self, model: str, tools: List[Tool] | None = None):
-        from openai import OpenAI
 
-        self.client = OpenAI()
+    def __init__(
+        self,
+        model: str,
+        history: History,
+        api_key: str,
+        temperature: float = 0.8,
+        tools: list | None = None,
+    ):
+
+        self.client = OpenAI(api_key=api_key)
         self.model = model
         self.tools = tools or []
+        self.temperature = temperature
+        self.history = history
+        self.role_map = {
+            "user": "user",
+            "assistant": "assistant",
+            "system": "system",
+        }
 
     def _convert_tools(self):
         """Convert internal Tool objects to OpenAI function definitions"""
@@ -31,12 +52,53 @@ class OpenAIAdapter(BaseModel):
             )
         return functions
 
+    def to_messages(self) -> list[ChatCompletionMessageParam]:
+        """Convert all memories to OpenAI ChatCompletion message objects."""
+        messages: list[ChatCompletionMessageParam] = []
+
+        for memory in self.history.MemoryList:
+            # Build base content
+            content_text = memory.message + f"\n(Created at: {memory.created})"
+
+            # Include tool calls / results inline if ResponseMem
+            if isinstance(memory, ResponseMem):
+                if memory.tool_calls:
+                    content_text += f"\nTool calls: {memory.tool_calls}"
+                if getattr(memory, "tool_results", []):
+                    content_text += f"\nTool results: {memory.tool_results}"
+
+            # Map role to correct OpenAI message type
+            role = self.role_map.get(memory.role, "user")
+
+            if role == "user":
+                msg = ChatCompletionUserMessageParam(content=content_text, role="user")
+            elif role == "system":
+                msg = ChatCompletionSystemMessageParam(
+                    content=content_text, role="system"
+                )
+            elif role == "assistant":
+                msg = ChatCompletionAssistantMessageParam(
+                    content=content_text, role="assistant"
+                )
+            else:
+                # Fallback to user
+                msg = ChatCompletionUserMessageParam(content=content_text, role="user")
+
+            messages.append(msg)
+
+        return messages
+
     def invoke(self, prompt: str, **kwargs) -> ResponseMem:
-        # Call OpenAI Chat Completions
+        tools = self._convert_tools()
+
+        messages = self.to_messages()
+        message = ChatCompletionUserMessageParam(content=prompt, role="user")
+        messages.append(message)
+
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            functions=self._convert_tools() if self.tools else None,  # type: ignore
+            messages=messages,
+            functions=tools,
             **kwargs,
         )
 
@@ -44,12 +106,16 @@ class OpenAIAdapter(BaseModel):
         choice = response.choices[0]
 
         # Extract message content
-        message = choice.message.get("content") if choice.message else ""
+        message = (
+            choice.message.content
+            if choice.message and choice.message.content
+            else "No content available"
+        )
 
         # Extract tool calls if any
         tool_calls = []
-        if choice.message and choice.message.get("function_call"):
-            fc = choice.message["function_call"]
-            tool_calls.append({"name": fc["name"], "args": json.loads(fc["arguments"])})
+        if choice.message and choice.message.function_call:
+            fc = choice.message.function_call
+            tool_calls.append({"name": fc.name, "args": json.loads(fc.arguments)})
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
