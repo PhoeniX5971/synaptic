@@ -5,7 +5,7 @@
 
 ---
 
-## 📦 Features
+## Features
 
 - **Core abstractions**
   - `base_model` – shared model logic
@@ -19,7 +19,7 @@
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 
@@ -38,7 +38,7 @@ synaptic/
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ```bash
 # Clone the repo
@@ -51,6 +51,6 @@ pip install -e .
 
 ---
 
-## 🛠 Wiki
+## Wiki
 
-## [`Docs`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/)
+[`Docs`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/)
