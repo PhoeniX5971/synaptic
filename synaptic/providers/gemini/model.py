@@ -63,7 +63,7 @@ class GeminiAdapter(BaseModel):
 
         return contents
 
-    def invoke(self, prompt: str, **kwargs) -> ResponseMem:
+    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
         # Build config with tools if any
         tools = self._convert_tools()
         config = types.GenerateContentConfig(
@@ -71,8 +71,9 @@ class GeminiAdapter(BaseModel):
             tools=tools,
         )
 
+        role = self.role_map.get(role, "user")
         contents = self.to_contents()
-        content = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+        content = [types.Content(role=role, parts=[types.Part(text=prompt)])]
         contents = contents + content
 
         # Call Gemini
@@ -96,9 +97,9 @@ class GeminiAdapter(BaseModel):
                     if part.function_call:
                         tool_calls.append(
                             ToolCall(
-                                name=part.function_call.name, # type: ignore
+                                name=part.function_call.name,  # type: ignore
                                 args=part.function_call.args or {},
-                                )
+                            )
                         )
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)

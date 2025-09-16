@@ -2,6 +2,11 @@ from typing import Callable, Any
 
 
 class Tool:
+    """
+    Tool type for better support of tools, allows for easier access of it's attributes.
+    Constructor Attributes:
+    """
+
     def __init__(
         self,
         name: str,

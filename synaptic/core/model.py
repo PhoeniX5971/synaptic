@@ -7,6 +7,10 @@ from .tool import Tool, ToolCall
 
 
 class Model:
+    """
+    Universal model which will allow usage of different LLM providers.
+    """
+
     def __init__(
         self,
         provider: Provider,
@@ -18,7 +22,45 @@ class Model:
         history: History = History(),
         autorun: bool = False,
         automem: bool = False,
+        blacklist: List[str] = [],  # type: ignore
     ) -> None:
+        """
+        Constructor:
+        provider:
+            type: Provider -- File: synaptic.core.provider Class Provider
+            description: enum
+                values:
+                    - OPENAI
+                    - GEMINI
+        model:
+            type: str
+            description: model name to use from the provider
+        temperature:
+            type: float
+            description: sampling temperature for response generation
+        api_key:
+            type: str
+            description: API key for the provider
+        max_tokens:
+            type: int
+            description: maximum tokens for the response
+        tools:
+            type: List[Tool] -- File: synaptic.core.tool Class Tool
+            description: list of tools to bind to the model
+        history:
+            type: History -- File: synaptic.core.base.memory Class History
+            description: conversation history manager
+        autorun:
+            type:bool
+            description: whether to automatically run tools returned by the model
+        automem:
+            type: bool
+            description: whether to automatically store interactions in history
+        blkacklist:
+            type: List[str]
+            description: list of tool names to ignore in autorun
+        """
+        # set attribute values
         self.provider = provider
         self.model = model
         self.temperature = temperature
@@ -30,12 +72,30 @@ class Model:
         self.history: History = history
         self.autorun = autorun
         self.automem = automem
-        self._initiate_model()
+        self.blacklist = blacklist
+        self.llm = self._initiate_model()
 
-    def bind_tools(self, tools: List[Tool]):
+    def bind_tools(self, tools: List[Tool]) -> None:
+        """
+        bind_tools:
+            type: method
+            return type: None
+            parameters:
+                - List[Tool] -- File: synaptic.core.tool Class Tool
+            description: bind additional tools to the model
+        """
+        # append the tools
         self.tools += tools
 
     def _initiate_model(self) -> BaseModel:
+        """
+        _initiate_model:
+            type: method
+            return type: BaseModel -- File: synaptic.core.base.base_model Class BaseModel
+            parameters: None
+            description: initiate the model based on the provider
+        """
+        # initialize the model based on the provider
         if self.provider == Provider.OPENAI:
             return OpenAIAdapter(
                 model=self.model,
@@ -52,6 +112,7 @@ class Model:
                 history=self.history,
                 api_key=self.api_key,
             )
+        # default to Gemini if unknown
         else:
             return GeminiAdapter(
                 model=self.model,
@@ -62,16 +123,27 @@ class Model:
             )
 
     def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
-        """Run tool calls returned by the model."""
+        """
+        run_tools:
+            type: method
+            return type: List[Any]
+            parameters:
+                - List[ToolCall] -- File: synaptic.core.tool Class ToolCall
+            description: internal tool runner, requires autorun to be true
+        """
+        # prepare a results list
         results = []
+        # get registered tools
         tool_map = {tool.name: tool.function for tool in self.tools}
 
+        # loop through tool calls and execute them if registered
         for call in tool_calls:
             name = call.name
             args = call.args
-            if name in tool_map:
+            if name in tool_map and name not in self.blacklist:
                 try:
                     result = tool_map[name](**args)
+                    # append result with tool name for clarity
                     results.append({"name": name, "result": result})
                 except Exception as e:
                     results.append({"name": name, "error": str(e)})
@@ -81,14 +153,31 @@ class Model:
         return results
 
     def invoke(
-        self, prompt: str, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
     ) -> ResponseMem:
-        llm = self._initiate_model()
-        memory = llm.invoke(prompt, **kwargs)
+        """
+        invoke:
+            type: method
+            return type: ResponseMem -- File: synaptic.core.base.memory Class ResponseMem
+            parameters:
+                - prompt: str
+                - autorun: bool (optional, overrides instance autorun)
+                - automem: bool (optional, overrides instance automem)
+                - **kwargs: additional parameters for the model's invoke method
+            description: invoke the model with a prompt optionally, optionally provide role, auto run tools and auto manage memory
+        """
+        # verify role
+        if role not in ["user", "assistant", "system"]:
+            raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
+        # send to provider specific invokation
+        memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
+
+        # do priority check for autorun and automem -- in call > in object
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
 
+        # run auto management
         if autorun:
             if memory.tool_calls:
                 tool_results = self._run_tools(memory.tool_calls)

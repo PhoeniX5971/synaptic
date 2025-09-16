@@ -18,3 +18,4 @@ env/
 
 # tests
 test*
+docs.py

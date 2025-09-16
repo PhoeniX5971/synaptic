@@ -1,13 +1,12 @@
 import json
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Literal
 from openai import OpenAI
 from openai.types.chat import (
     ChatCompletionMessageParam,
     ChatCompletionUserMessageParam,
     ChatCompletionSystemMessageParam,
     ChatCompletionAssistantMessageParam,
-    ChatCompletionToolMessageParam,
 )
 
 from dotenv import load_dotenv
@@ -89,11 +88,22 @@ class OpenAIAdapter(BaseModel):
 
         return messages
 
-    def invoke(self, prompt: str, **kwargs) -> ResponseMem:
+    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
         tools = self._convert_tools()
 
         messages = self.to_messages()
-        message = ChatCompletionUserMessageParam(content=prompt, role="user")
+        # Choose the right message param class based on role
+        if role == "user":
+            message = ChatCompletionUserMessageParam(content=prompt, role="user")
+        elif role == "assistant":
+            message = ChatCompletionAssistantMessageParam(
+                content=prompt, role="assistant"
+            )
+        elif role == "system":
+            message = ChatCompletionSystemMessageParam(content=prompt, role="system")
+        else:
+            message = ChatCompletionUserMessageParam(content=prompt, role="user")
+
         messages.append(message)
 
         response = self.client.chat.completions.create(
@@ -119,7 +129,7 @@ class OpenAIAdapter(BaseModel):
             fc = choice.message.function_call
             tool_calls.append(
                 ToolCall(
-                    name=fc.name, 
+                    name=fc.name,
                     args=json.loads(fc.arguments),
                 )
             )

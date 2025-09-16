@@ -53,6 +53,10 @@ Appends tools to the model's tool list.
 Runs tool calls (map call `name` to registered `Tool.function`) and returns results  
 as list of `{"name", "result"}` or `{"name", "error"}`.
 
+## def invoke(self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, \*\*kwargs # type: ignore) -> ResponseMem:
+
+Runs llm call and returns response as a ResponseMem object.
+
 **Implementation details**
 
 - Uses `tool_map = {tool.name: tool.function for tool in self.tools}`

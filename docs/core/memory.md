@@ -48,9 +48,14 @@ ResponseMem(message: str, created, tool_calls, tool_results: list = [], role: st
 
 **Fields**
 
-- `tool_calls: list` — Parsed function calls returned by adapter (list of dicts `{name, args}`).
+- `tool_calls: list[ToolCall]` — Parsed function calls returned by adapter.
 - `tool_results: list` — Results populated after tool execution (list of dicts `{name, result}`).
 - Inherits all `Memory` fields.
+
+**Methods**
+
+- `list_tool_calls()` — returns a list of names of invoked tools.
+- `get_tool_call(name: str) -> ToolCall` — returns the first tool call matching `name`.
 
 **repr**
 
