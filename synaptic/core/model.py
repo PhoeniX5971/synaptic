@@ -15,7 +15,7 @@ class Model:
         api_key: str = "",  # type: ignore
         max_tokens: int = 1024,
         tools: List[Tool] = None,  # type: ignore
-        history: History = None,  # type: ignore
+        history: History = History(),
         autorun: bool = False,
         automem: bool = False,
     ) -> None:
@@ -27,7 +27,7 @@ class Model:
         self.api_key = api_key
         self.max_tokens = max_tokens
         self.tools = tools or []
-        self.history: History = history or History()
+        self.history: History = history
         self.autorun = autorun
         self.automem = automem
         self._initiate_model()
