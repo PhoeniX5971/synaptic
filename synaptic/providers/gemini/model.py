@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+from typing import List
 from dotenv import load_dotenv
 import google.genai as genai
 from google.genai import types
 
 from ...core.base import BaseModel, ResponseMem, History
+from ...core.tool import ToolCall
 
 load_dotenv()
 
@@ -81,7 +83,7 @@ class GeminiAdapter(BaseModel):
         # Extract metadata
         created = datetime.now().astimezone(timezone.utc)
         message = ""
-        tool_calls = []
+        tool_calls: List[ToolCall] = []
 
         if response.candidates:
             candidate = response.candidates[0]
@@ -93,10 +95,10 @@ class GeminiAdapter(BaseModel):
                         message += part.text
                     if part.function_call:
                         tool_calls.append(
-                            {
-                                "name": part.function_call.name,
-                                "args": part.function_call.args,
-                            }
+                            ToolCall(
+                                name=part.function_call.name, # type: ignore
+                                args=part.function_call.args or {},
+                                )
                         )
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)

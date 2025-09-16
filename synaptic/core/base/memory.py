@@ -1,4 +1,5 @@
 from typing import List
+from ..tool import ToolCall
 
 
 class Memory:
@@ -15,7 +16,7 @@ class Memory:
 
 class ResponseMem(Memory):
     def __init__(
-        self, message: str, created, tool_calls, tool_results=[], role="assistant"
+        self, message: str, created, tool_calls: List[ToolCall], tool_results=[], role="assistant"
     ):
         super().__init__(message, created, role)
         self.tool_calls = tool_calls

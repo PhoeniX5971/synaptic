@@ -13,6 +13,7 @@ from openai.types.chat import (
 from dotenv import load_dotenv
 
 from ...core.base import BaseModel, ResponseMem, History
+from ...core.tool import ToolCall
 
 load_dotenv()
 
@@ -113,9 +114,14 @@ class OpenAIAdapter(BaseModel):
         )
 
         # Extract tool calls if any
-        tool_calls = []
+        tool_calls: List[ToolCall] = []
         if choice.message and choice.message.function_call:
             fc = choice.message.function_call
-            tool_calls.append({"name": fc.name, "args": json.loads(fc.arguments)})
+            tool_calls.append(
+                ToolCall(
+                    name=fc.name, 
+                    args=json.loads(fc.arguments),
+                )
+            )
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)

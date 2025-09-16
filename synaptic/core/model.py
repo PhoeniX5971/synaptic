@@ -3,7 +3,7 @@ from ..providers import GeminiAdapter, OpenAIAdapter
 
 from .base import BaseModel, History, ResponseMem
 from .provider import Provider
-from .tool import Tool
+from .tool import Tool, ToolCall
 
 
 class Model:
@@ -61,14 +61,14 @@ class Model:
                 api_key=self.api_key,
             )
 
-    def _run_tools(self, tool_calls: List[dict[str, Any]]) -> List[Any]:
+    def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
         """Run tool calls returned by the model."""
         results = []
         tool_map = {tool.name: tool.function for tool in self.tools}
 
         for call in tool_calls:
-            name = call.get("name")
-            args = call.get("args", {})
+            name = call.name
+            args = call.args
             if name in tool_map:
                 try:
                     result = tool_map[name](**args)
