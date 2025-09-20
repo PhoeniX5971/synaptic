@@ -1,5 +1,5 @@
 from typing import List, Any
-from ..providers import GeminiAdapter, OpenAIAdapter, DeepSeekAdapter
+from ..providers import GeminiAdapter, OpenAIAdapter
 
 from .base import BaseModel, History, ResponseMem
 from .provider import Provider
@@ -71,7 +71,8 @@ class Model:
         self.tools = tools or []
         self.autorun = autorun
         self.automem = automem
-        self.history: History = history if self.automem else None  # type: ignore
+        if self.automem:
+            self.history: History = history
         self.blacklist = blacklist
         self.llm = self._initiate_model()
 
@@ -86,7 +87,6 @@ class Model:
         """
         # append the tools
         self.tools += tools
-        self.llm = self._initiate_model()
 
     def _initiate_model(self) -> BaseModel:
         """
@@ -107,14 +107,6 @@ class Model:
             )
         elif self.provider == Provider.GEMINI:
             return GeminiAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=self.tools,
-                history=self.history,
-                api_key=self.api_key,
-            )
-        elif self.provider == Provider.DEEPSEEK:
-            return DeepSeekAdapter(
                 model=self.model,
                 temperature=self.temperature,
                 tools=self.tools,

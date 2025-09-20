@@ -17,7 +17,7 @@ from ...core.tool import ToolCall
 load_dotenv()
 
 
-class OpenAIAdapter(BaseModel):
+class DeepSeekAdapter(BaseModel):
 
     def __init__(
         self,
@@ -28,7 +28,7 @@ class OpenAIAdapter(BaseModel):
         tools: list | None = None,
     ):
 
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com/")
         self.model = model
         self.tools = tools or []
         self.temperature = temperature

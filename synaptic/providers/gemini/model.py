@@ -91,15 +91,16 @@ class GeminiAdapter(BaseModel):
 
             # Only process content if it exists
             if candidate.content:
-                for part in candidate.content.parts:  # type: ignore
-                    if part.text:
-                        message += part.text
-                    if part.function_call:
-                        tool_calls.append(
-                            ToolCall(
-                                name=part.function_call.name,  # type: ignore
-                                args=part.function_call.args or {},
+                if candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if part.text:
+                            message += part.text
+                        if part.function_call:
+                            tool_calls.append(
+                                ToolCall(
+                                    name=part.function_call.name,  # type: ignore
+                                    args=part.function_call.args or {},
+                                )
                             )
-                        )
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
