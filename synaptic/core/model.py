@@ -157,7 +157,9 @@ class Model:
                 except Exception as e:
                     results.append({"name": name, "error": str(e)})
             else:
-                results.append({"name": name, "error": "Tool not registered"})
+                results.append(
+                    {"name": name, "error": "Tool not registered or blacklisted"}
+                )
 
         return results
 
