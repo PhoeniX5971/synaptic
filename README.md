@@ -42,7 +42,7 @@ synaptic/
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/synaptic.git
+git clone https://github.com/PhoeniX5971/synaptic.git
 cd synaptic
 
 # Install dependencies
