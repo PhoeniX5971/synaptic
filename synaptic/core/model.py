@@ -71,7 +71,7 @@ class Model:
             raise ValueError("API key must be provided")
         self.api_key = api_key
         self.max_tokens = max_tokens
-        self.tools = tools or []
+        self.tools = tools or None
         self.autorun = autorun
         self.automem = automem
         self.history: History = history if self.automem else None  # type: ignore
@@ -94,6 +94,8 @@ class Model:
             description: bind additional tools to the model
         """
         # append the tools
+        if self.tools is None:
+            self.tools = []
         self.tools += tools
         self.llm = self._initiate_model()
 
@@ -159,6 +161,8 @@ class Model:
         """
         # prepare a results list
         results = []
+        if self.tools is None or len(self.tools) == 0:
+            return results
         # get registered tools
         tool_map = {tool.name: tool.function for tool in self.tools}
 

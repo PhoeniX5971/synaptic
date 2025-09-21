@@ -32,7 +32,7 @@ class OpenAIAdapter(BaseModel):
 
         self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.tools = tools or []
+        self.tools = tools
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
@@ -46,6 +46,8 @@ class OpenAIAdapter(BaseModel):
     def _convert_tools(self):
         """Convert internal Tool objects to OpenAI function definitions"""
         functions = []
+        if self.tools is None:
+            return None
         for t in self.tools:
             functions.append(
                 {
