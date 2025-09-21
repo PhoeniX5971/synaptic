@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from google.genai import types
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import ToolCall
+from ...core.tool import TOOL_REGISTRY, ToolCall, registr_callback
 
 load_dotenv()
 
@@ -24,24 +24,44 @@ class GeminiAdapter(BaseModel):
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
-        self.tools = tools or []
+        self.synaptic_tools = tools or []
+        self.gemini_tools: List[types.Tool] = []
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
+        registr_callback(self._invalidate_tools)
+        self._invalidate_tools()
         self.role_map = {
             "user": "user",
             "assistant": "model",
             "system": "system",
         }
 
-    def _convert_tools(self) -> list[types.Tool]:
-        """Convert custom Tool objects to Gemini `types.Tool` objects."""
-        gemini_tools = []
-        for t in self.tools:
-            # Each Tool may have a declaration dict
-            gemini_tools.append(types.Tool(function_declarations=[t.declaration]))
-        return gemini_tools
+    def _invalidate_tools(self):
+        """Update Gemini-side tools without mutating synaptic tools."""
+        self._convert_tools()
+
+    def _convert_tools(self) -> None:
+        """Convert synaptic Tool objects + TOOL_REGISTRY to Gemini types.Tool objects with logs."""
+        self.gemini_tools = []
+
+        if self.response_format != ResponseFormat.NONE:
+            return
+        # Use a dict to deduplicate by name
+        all_tools = {}
+        # Add tools from self.synaptic_tools
+        for t in self.synaptic_tools or []:
+            all_tools[t.name] = t
+        # Add tools from TOOL_REGISTRY if not already added
+        for t_name, t in TOOL_REGISTRY.items():
+            if t_name not in all_tools:
+                all_tools[t_name] = t
+        # Convert to gemini_tools
+        for t_name, t in all_tools.items():
+            self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))  # type: ignore
+        # Update self.synaptic_tools to include all tools
+        self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> list[types.Content]:
         """Convert all memories to Gemini Content objects."""
@@ -70,10 +90,9 @@ class GeminiAdapter(BaseModel):
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
         # Build config with tools if any
-        tools = self._convert_tools()
         config = types.GenerateContentConfig(
             temperature=self.temperature,
-            tools=tools,
+            tools=self.gemini_tools,
         )
 
         if self.response_format == ResponseFormat.NONE:

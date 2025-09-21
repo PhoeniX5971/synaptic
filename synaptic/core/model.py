@@ -4,7 +4,7 @@ from typing import Any, List
 from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter
 from .base import BaseModel, History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
-from .tool import Tool, ToolCall
+from .tool import Tool, ToolCall, registr_callback
 
 
 class Model:
@@ -83,6 +83,8 @@ class Model:
                 "Response schema must be provided for sturctured response formats"
             )
         self.llm = self._initiate_model()
+        self.llm._invalidate_tools()
+        self.tools = self.llm.synaptic_tools
 
     def bind_tools(self, tools: List[Tool]) -> None:
         """
@@ -97,9 +99,10 @@ class Model:
         if self.tools is None:
             self.tools = []
         self.tools += tools
-        self.llm = self._initiate_model()
+        self.llm.synaptic_tools = self.tools
+        self.llm._invalidate_tools()
 
-    def _initiate_model(self) -> BaseModel:
+    def _initiate_model(self) -> Any:
         """
         _initiate_model:
             type: method
@@ -161,27 +164,24 @@ class Model:
         """
         # prepare a results list
         results = []
+        if not hasattr(self.llm, "synaptic_tools") or not self.llm.synaptic_tools:
+            return results
         if self.tools is None or len(self.tools) == 0:
             return results
         # get registered tools
-        tool_map = {tool.name: tool.function for tool in self.tools}
+        tool_map = {tool.name: tool.function for tool in self.llm.synaptic_tools}
 
-        # loop through tool calls and execute them if registered
         for call in tool_calls:
-            name = call.name
-            args = call.args
+            name, args = call.name, call.args
             if name in tool_map and name not in self.blacklist:
                 try:
-                    result = tool_map[name](**args)
-                    # append result with tool name for clarity
-                    results.append({"name": name, "result": result})
+                    results.append({"name": name, "result": tool_map[name](**args)})
                 except Exception as e:
                     results.append({"name": name, "error": str(e)})
             else:
                 results.append(
                     {"name": name, "error": "Tool not registered or blacklisted"}
                 )
-
         return results
 
     def invoke(
@@ -216,7 +216,7 @@ class Model:
             if memory.tool_calls:
                 tool_results = self._run_tools(memory.tool_calls)
                 # Attach results for downstream use
-                memory.tool_results = tool_results  # optional extra field
+                memory.tool_results = tool_results
         else:
             memory.tool_results = []
 

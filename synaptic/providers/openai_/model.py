@@ -12,7 +12,7 @@ from openai.types.chat import (
 )
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import ToolCall
+from ...core.tool import TOOL_REGISTRY, ToolCall, registr_callback
 
 load_dotenv()
 
@@ -32,31 +32,56 @@ class OpenAIAdapter(BaseModel):
 
         self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.tools = tools
+        self.synaptic_tools = tools
+        self.openai_tools = []
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
+        registr_callback(self._invalidate_tools)
+        self._invalidate_tools()
         self.role_map = {
             "user": "user",
             "assistant": "assistant",
             "system": "system",
         }
 
+    def _invalidate_tools(self):
+        """Update Openai tools without mutating synaptic tools."""
+        self._convert_tools()
+
     def _convert_tools(self):
-        """Convert internal Tool objects to OpenAI function definitions"""
-        functions = []
-        if self.tools is None:
+        """Convert synaptic Tool objects to OpenAI function definitions"""
+        self.openai_tools = []
+
+        if self.response_format != ResponseFormat.NONE:
             return None
-        for t in self.tools:
-            functions.append(
+
+        all_tools = {}
+
+        for t in self.synaptic_tools or []:
+            all_tools[t.name] = t
+            # all_tools.append(
+            #     {
+            #         "name": t.name,
+            #         "description": t.declaration.get("description", ""),
+            #         "parameters": t.declaration.get("parameters", {}),
+            #     }
+            # )
+
+        for t_name, t in TOOL_REGISTRY.items():
+            if t_name not in all_tools:  # avoid duplicates
+                all_tools[t_name] = t
+
+        for t_name, t in all_tools.items():
+            self.openai_tools.append(
                 {
                     "name": t.name,
                     "description": t.declaration.get("description", ""),
                     "parameters": t.declaration.get("parameters", {}),
                 }
             )
-        return functions
+            self.synaptic_tools = list(all_tools.values())
 
     def to_messages(self) -> list[ChatCompletionMessageParam]:
         """Convert all memories to OpenAI ChatCompletion message objects."""
@@ -95,8 +120,6 @@ class OpenAIAdapter(BaseModel):
         return messages
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
-        tools = self._convert_tools()
-
         messages = self.to_messages()
         # Choose the right message param class based on role
         if role == "user":
@@ -115,7 +138,7 @@ class OpenAIAdapter(BaseModel):
         params = {
             "model": self.model,
             "messages": messages,
-            "functions": tools,
+            "functions": self.openai_tools,
             **kwargs,
         }
 
