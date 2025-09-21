@@ -1,17 +1,17 @@
 import json
 from datetime import datetime, timezone
-from typing import List
-from openai import OpenAI
-from openai.types.chat import (
-    ChatCompletionMessageParam,
-    ChatCompletionUserMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionAssistantMessageParam,
-)
+from typing import Any, List
 
 from dotenv import load_dotenv
+from openai import OpenAI
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 
-from ...core.base import BaseModel, ResponseMem, History
+from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import ToolCall
 
 load_dotenv()
@@ -24,6 +24,8 @@ class OpenAIAdapter(BaseModel):
         model: str,
         history: History,
         api_key: str,
+        response_format: ResponseFormat,
+        response_schema: Any,
         temperature: float = 0.8,
         tools: list | None = None,
     ):
@@ -33,6 +35,8 @@ class OpenAIAdapter(BaseModel):
         self.tools = tools or []
         self.temperature = temperature
         self.history = history
+        self.response_format = response_format
+        self.response_schema = response_schema
         self.role_map = {
             "user": "user",
             "assistant": "assistant",
@@ -106,11 +110,20 @@ class OpenAIAdapter(BaseModel):
 
         messages.append(message)
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            functions=tools,
+        params = {
+            "model": self.model,
+            "messages": messages,
+            "functions": tools,
             **kwargs,
+        }
+
+        if self.response_format == ResponseFormat.JSON:
+            params["response_format"] = self.response_schema
+
+        response = (
+            self.client.chat.completions.parse(**params)
+            if self.response_format == ResponseFormat.JSON
+            else self.client.chat.completions.create(**params)
         )
 
         created = datetime.now().astimezone(timezone.utc)

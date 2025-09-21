@@ -1,7 +1,8 @@
-from typing import List, Any
-from ..providers import GeminiAdapter, OpenAIAdapter, DeepSeekAdapter
+from datetime import datetime, timezone
+from typing import Any, List
 
-from .base import BaseModel, History, ResponseMem
+from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter
+from .base import BaseModel, History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
 from .tool import Tool, ToolCall
 
@@ -23,6 +24,8 @@ class Model:
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] = [],  # type: ignore
+        response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
+        response_schema: Any = None,  # type: ignore
     ) -> None:
         """
         Constructor:
@@ -73,6 +76,12 @@ class Model:
         self.automem = automem
         self.history: History = history if self.automem else None  # type: ignore
         self.blacklist = blacklist
+        self.response_format = response_format
+        self.response_schema = response_schema
+        if self.response_format != ResponseFormat.NONE and self.response_schema is None:
+            raise ValueError(
+                "Response schema must be provided for sturctured response formats"
+            )
         self.llm = self._initiate_model()
 
     def bind_tools(self, tools: List[Tool]) -> None:
@@ -104,6 +113,8 @@ class Model:
                 tools=self.tools,
                 history=self.history,
                 api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
             )
         elif self.provider == Provider.GEMINI:
             return GeminiAdapter(
@@ -112,6 +123,8 @@ class Model:
                 tools=self.tools,
                 history=self.history,
                 api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
             )
         elif self.provider == Provider.DEEPSEEK:
             return DeepSeekAdapter(
@@ -120,6 +133,8 @@ class Model:
                 tools=self.tools,
                 history=self.history,
                 api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
             )
         # default to Gemini if unknown
         else:
@@ -129,6 +144,8 @@ class Model:
                 tools=self.tools,
                 history=self.history,
                 api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
             )
 
     def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
@@ -180,6 +197,15 @@ class Model:
         # verify role
         if role not in ["user", "assistant", "system"]:
             raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
+
+        if automem:
+            self.history.add(
+                UserMem(
+                    message=prompt,
+                    role=role,
+                    created=datetime.now().astimezone(timezone.utc),
+                )
+            )
 
         # send to provider specific invokation
         memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)

@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
-from typing import List
-from dotenv import load_dotenv
+from typing import Any, List
+
 import google.genai as genai
+from dotenv import load_dotenv
 from google.genai import types
 
-from ...core.base import BaseModel, ResponseMem, History
+from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import ToolCall
 
 load_dotenv()
@@ -16,6 +17,8 @@ class GeminiAdapter(BaseModel):
         model: str,
         history: History,
         api_key: str,
+        response_format: ResponseFormat,
+        response_schema: Any,
         temperature: float = 0.8,
         tools: list | None = None,
     ):
@@ -24,6 +27,8 @@ class GeminiAdapter(BaseModel):
         self.tools = tools or []
         self.temperature = temperature
         self.history = history
+        self.response_format = response_format
+        self.response_schema = response_schema
         self.role_map = {
             "user": "user",
             "assistant": "model",
@@ -70,6 +75,12 @@ class GeminiAdapter(BaseModel):
             temperature=self.temperature,
             tools=tools,
         )
+
+        if self.response_format == ResponseFormat.NONE:
+            config.response_mime_type = "text/plain"
+        elif self.response_format == ResponseFormat.JSON:
+            config.response_mime_type = "application/json"
+            config.response_schema = self.response_schema
 
         role = self.role_map.get(role, "user")
         contents = self.to_contents()
