@@ -72,6 +72,11 @@ class UserMem(Memory):
     def __init__(self, message: str, created, role="user"):
         super().__init__(message, created, role)
 
+    def __repr__(self):
+        return (
+            f"<Memory role={self.role} message={self.message!r} created={self.created}>"
+        )
+
 
 class History:
     """

@@ -198,14 +198,7 @@ class Model:
         if role not in ["user", "assistant", "system"]:
             raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
-        if automem:
-            self.history.add(
-                UserMem(
-                    message=prompt,
-                    role=role,
-                    created=datetime.now().astimezone(timezone.utc),
-                )
-            )
+        created = (datetime.now().astimezone(timezone.utc),)
 
         # send to provider specific invokation
         memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
@@ -224,6 +217,7 @@ class Model:
             memory.tool_results = []
 
         if automem:
+            self.history.add(UserMem(message=prompt, role=role, created=created))
             self.history.add(memory)
 
         return memory
