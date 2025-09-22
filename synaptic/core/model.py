@@ -2,9 +2,9 @@ from datetime import datetime, timezone
 from typing import Any, List
 
 from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter
-from .base import BaseModel, History, ResponseFormat, ResponseMem, UserMem
+from .base import History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
-from .tool import Tool, ToolCall, registr_callback
+from .tool import Tool, ToolCall
 
 
 class Model:

@@ -12,7 +12,7 @@ from openai.types.chat import (
 )
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, registr_callback
+from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
 
 load_dotenv()
 
@@ -38,7 +38,7 @@ class OpenAIAdapter(BaseModel):
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
-        registr_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools)
         self._invalidate_tools()
         self.role_map = {
             "user": "user",

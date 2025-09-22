@@ -53,4 +53,4 @@ pip install -e .
 
 ## Wiki
 
-[`Docs`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/)
+[Synaptic Wiki](https://synaptic-wiki.vercel.app)

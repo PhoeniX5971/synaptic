@@ -5,7 +5,7 @@ TOOL_REGISTRY = {}
 _registry_callbacks = []  # FOR SUBSCRIBED MODELS
 
 
-def registr_callback(fn: Callable[[], None]):
+def register_callback(fn: Callable[[], None]):
     """
     SUBSCRIBES A MODEL TO TOOL REGISTRY CHANGES
     Takes a function with no arguments from the model
