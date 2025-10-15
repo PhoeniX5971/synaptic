@@ -115,7 +115,9 @@ class Model:
             return OpenAIAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=self.tools,
+                tools=(
+                    self.tools if self.response_format == ResponseFormat.NONE else None
+                ),
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -125,7 +127,9 @@ class Model:
             return GeminiAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=self.tools,
+                tools=(
+                    self.tools if self.response_format == ResponseFormat.NONE else None
+                ),
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -135,7 +139,9 @@ class Model:
             return DeepSeekAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=self.tools,
+                tools=(
+                    self.tools if self.response_format == ResponseFormat.NONE else None
+                ),
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -146,7 +152,9 @@ class Model:
             return GeminiAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=self.tools,
+                tools=(
+                    self.tools if self.response_format == ResponseFormat.NONE else None
+                ),
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,

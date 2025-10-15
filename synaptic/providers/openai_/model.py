@@ -144,6 +144,7 @@ class OpenAIAdapter(BaseModel):
 
         if self.response_format == ResponseFormat.JSON:
             params["response_format"] = self.response_schema
+            params["functions"] = None
 
         response = (
             self.client.chat.completions.parse(**params)

@@ -100,6 +100,7 @@ class GeminiAdapter(BaseModel):
         elif self.response_format == ResponseFormat.JSON:
             config.response_mime_type = "application/json"
             config.response_schema = self.response_schema
+            config.tools = None
 
         role = self.role_map.get(role, "user")
         contents = self.to_contents()
