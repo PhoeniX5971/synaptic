@@ -53,6 +53,14 @@ class Tool:
         final_kwargs = {**self.default_params, **kwargs}
         return self.function(**final_kwargs)
 
+    def __repr__(self) -> str:
+        decl_summary = {
+            k: self.declaration[k]
+            for k in ("name", "description")
+            if k in self.declaration
+        }
+        return f"<Tool name={self.name!r}, declaration={decl_summary}, default_params={self.default_params}>"
+
 
 class ToolCall:
     def __init__(self, name: str, args: dict):
