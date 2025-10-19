@@ -83,10 +83,10 @@ class Model:
             raise ValueError(
                 "Response schema must be provided for sturctured response formats"
             )
+        self.instructions = instructions
         self.llm = self._initiate_model()
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
-        self.instructions = instructions
 
     def bind_tools(self, tools: List[Tool]) -> None:
         """
@@ -162,6 +162,7 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
+                instructions=self.instructions,
             )
 
     def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
