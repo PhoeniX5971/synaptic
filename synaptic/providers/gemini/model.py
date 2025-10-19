@@ -1,5 +1,8 @@
+import json
 from datetime import datetime, timezone
-from typing import Any, List
+from typing import Any, List, Optional, Dict
+
+from pydantic import BaseModel as PBM, create_model, ConfigDict
 
 import google.genai as genai
 from dotenv import load_dotenv
@@ -9,6 +12,11 @@ from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
 
 load_dotenv()
+
+
+class PToolCall(PBM):
+    name: str
+    args: Optional[Dict[str, Any]] = None
 
 
 class GeminiAdapter(BaseModel):
@@ -21,6 +29,7 @@ class GeminiAdapter(BaseModel):
         response_schema: Any,
         temperature: float = 0.8,
         tools: list | None = None,
+        instructions: str = "",
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
@@ -32,10 +41,11 @@ class GeminiAdapter(BaseModel):
         self.response_schema = response_schema
         register_callback(self._invalidate_tools)
         self._invalidate_tools()
+        self.instructions = instructions
         self.role_map = {
             "user": "user",
             "assistant": "model",
-            "system": "system",
+            "system": "user",
         }
 
     def _invalidate_tools(self):
@@ -46,8 +56,8 @@ class GeminiAdapter(BaseModel):
         """Convert synaptic Tool objects + TOOL_REGISTRY to Gemini types.Tool objects with logs."""
         self.gemini_tools = []
 
-        if self.response_format != ResponseFormat.NONE:
-            return
+        # if self.response_format != ResponseFormat.NONE:
+        #     return
         # Use a dict to deduplicate by name
         all_tools = {}
         # Add tools from self.synaptic_tools
@@ -95,17 +105,70 @@ class GeminiAdapter(BaseModel):
             tools=self.gemini_tools,
         )
 
+        role = self.role_map.get(role, "user")
+
+        contents = self.to_contents()
+        content = [types.Content(role=role, parts=[types.Part(text=prompt)])]
+        contents = contents + content
+
         if self.response_format == ResponseFormat.NONE:
             config.response_mime_type = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
             config.response_mime_type = "application/json"
-            config.response_schema = self.response_schema
             config.tools = None
 
-        role = self.role_map.get(role, "user")
-        contents = self.to_contents()
-        content = [types.Content(role=role, parts=[types.Part(text=prompt)])]
-        contents = contents + content
+        #     tool_declarations = [
+        #         decl
+        #         for tool in (self.gemini_tools or [])
+        #         for decl in (tool.function_declarations or [])
+        #     ]
+        #
+        #     tool_declarations_text = json.dumps(
+        #         [decl.model_dump() for decl in tool_declarations]
+        #     )
+        #     tools = [
+        #         types.Content(
+        #             role=self.role_map.get("system", "user"),
+        #             parts=[
+        #                 types.Part(
+        #                     text=(
+        #                         "Available Tools, call in structured output as 'synaptic_calls':\n"
+        #                         + tool_declarations_text
+        #                     )
+        #                 )
+        #             ],
+        #         )
+        #     ]
+        #
+        #     ExtendedSchema = create_model(
+        #         "ExtendedSchema",
+        #         __base__=self.response_schema,
+        #         synaptic_calls=(Optional[List[PToolCall]], None),
+        #     )
+        #     config.response_schema = ExtendedSchema
+        #
+        #     contents = tools + content
+        #
+        # if self.instructions:
+        #     instructions = [
+        #         types.Content(
+        #             role=self.role_map.get("system", "user"),
+        #             parts=[types.Part(text=self.instructions)],
+        #         )
+        #     ]
+        #     contents = instructions + contents
+        #
+        # # FIX: LOGGER
+        # print("\n\n=== Contents ===\n\n")
+        # for i, content in enumerate(contents, 1):
+        #     print(f"--- Content #{i} ---")
+        #     print(f"Role: {content.role}")
+        #     for j, part in enumerate(
+        #         content.parts or [], 1
+        #     ):  # <-- default to empty list
+        #         print(f" Part #{j}: {part.text}\n")
+        #
+        # print("\n\n=== End Contents ===\n\n")
 
         # Call Gemini
         response = self.client.models.generate_content(

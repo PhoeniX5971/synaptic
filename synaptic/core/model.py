@@ -24,6 +24,7 @@ class Model:
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] = [],  # type: ignore
+        instructions: str = "",
         response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
         response_schema: Any = None,  # type: ignore
     ) -> None:
@@ -85,6 +86,7 @@ class Model:
         self.llm = self._initiate_model()
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
+        self.instructions = instructions
 
     def bind_tools(self, tools: List[Tool]) -> None:
         """
