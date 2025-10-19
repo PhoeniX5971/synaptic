@@ -148,16 +148,16 @@ class GeminiAdapter(BaseModel):
         #     config.response_schema = ExtendedSchema
         #
         #     contents = tools + content
-        #
-        # if self.instructions:
-        #     instructions = [
-        #         types.Content(
-        #             role=self.role_map.get("system", "user"),
-        #             parts=[types.Part(text=self.instructions)],
-        #         )
-        #     ]
-        #     contents = instructions + contents
-        #
+
+        if self.instructions:
+            instructions = [
+                types.Content(
+                    role=self.role_map.get("system", "user"),
+                    parts=[types.Part(text=self.instructions)],
+                )
+            ]
+            contents = instructions + contents
+
         # # FIX: LOGGER
         # print("\n\n=== Contents ===\n\n")
         # for i, content in enumerate(contents, 1):
