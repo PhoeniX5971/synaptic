@@ -20,7 +20,7 @@ class Model:
         api_key: str = "",  # type: ignore
         max_tokens: int = 1024,
         tools: List[Tool] = None,  # type: ignore
-        history: History = History(),
+        history: History | None = None,
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] = [],  # type: ignore
@@ -75,7 +75,7 @@ class Model:
         self.tools = tools or None
         self.autorun = autorun
         self.automem = automem
-        self.history: History = history if self.automem else None  # type: ignore
+        self.history: History = History() if self.automem else None  # type: ignore
         self.blacklist = blacklist
         self.response_format = response_format
         self.response_schema = response_schema
