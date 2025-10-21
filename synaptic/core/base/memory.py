@@ -84,8 +84,16 @@ class History:
     Stores a rolling window of Memory objects (user/system/assistant).
     """
 
-    def __init__(self, memoryList: List[Memory] = [], size: int = 10):
-        self.MemoryList: list[Memory] = memoryList
+    def __init__(self, memoryList: list[Memory] | None = None, size: int = 10):
+        """
+        Initialize History object.
+
+        Args:
+            memoryList: Optional initial list of Memory objects. If None, starts with an empty list.
+            size: Maximum number of memories to keep in the rolling window.
+        """
+        # Use a new list per instance to avoid shared-memory issues
+        self.MemoryList: list[Memory] = memoryList or []
         self.size = size
 
     def _size_update(self):
@@ -100,6 +108,12 @@ class History:
         """
         Modify and apply the history window size.
         Returns updated MemoryList.
+
+        Args:
+            size: New maximum size of the memory window.
+
+        Returns:
+            The updated MemoryList.
         """
         self.size = size
         self._size_update()
@@ -108,6 +122,9 @@ class History:
     def add(self, memory: Memory) -> None:
         """
         Add a Memory object to history and enforce size limit.
+
+        Args:
+            memory: Memory object to add.
         """
         self.MemoryList.append(memory)
         self._size_update()
