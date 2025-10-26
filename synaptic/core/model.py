@@ -23,7 +23,7 @@ class Model:
         history: History | None = None,
         autorun: bool = False,
         automem: bool = False,
-        blacklist: List[str] = [],  # type: ignore
+        blacklist: List[str] | None = None,
         instructions: str = "",
         response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
         response_schema: Any = None,  # type: ignore
@@ -76,7 +76,7 @@ class Model:
         self.autorun = autorun
         self.automem = automem
         self.history: History = History() if self.automem else None  # type: ignore
-        self.blacklist = blacklist
+        self.blacklist = blacklist or []
         self.response_format = response_format
         self.response_schema = response_schema
         if self.response_format != ResponseFormat.NONE and self.response_schema is None:
