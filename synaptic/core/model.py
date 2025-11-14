@@ -124,6 +124,7 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
+                instructions=self.instructions,
             )
         elif self.provider == Provider.GEMINI:
             return GeminiAdapter(
