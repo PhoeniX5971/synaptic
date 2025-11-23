@@ -54,8 +54,8 @@ class OpenAIAdapter(BaseModel):
     def _convert_tools(self):
         self.openai_tools = []
 
-        if self.response_format != ResponseFormat.NONE:
-            return None
+        # if self.response_format != ResponseFormat.NONE:
+        #     return None
 
         all_tools = {}
 
