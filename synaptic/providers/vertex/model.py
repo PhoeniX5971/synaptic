@@ -13,6 +13,7 @@ from vertexai.generative_models import (
     Content,
     Tool,
     GenerationConfig,
+    FunctionDeclaration,
 )
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
@@ -69,19 +70,33 @@ class VertexAdapter(BaseModel):
         self._convert_tools()
 
     def _convert_tools(self):
-        """Convert TOOL_REGISTRY → Vertex Tool definitions."""
+        """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
         all_tools = {}
 
+        # merge local tools + registry
         for t in self.synaptic_tools:
             all_tools[t.name] = t
-
         for name, t in TOOL_REGISTRY.items():
             if name not in all_tools:
                 all_tools[name] = t
 
         vertex_tool_list = []
+
         for _, tool in all_tools.items():
-            vertex_tool_list.append(Tool(function_declarations=[tool.declaration]))
+            decl = tool.declaration
+
+            # ---------------------------------------------
+            # FIX: Convert dict → FunctionDeclaration
+            # ---------------------------------------------
+            if isinstance(decl, dict):
+                decl = FunctionDeclaration(
+                    name=decl.get("name"),  # type: ignore
+                    description=decl.get("description"),  # type: ignore
+                    parameters=decl.get("parameters"),  # type: ignore
+                )
+
+            # decl is now guaranteed to be FunctionDeclaration
+            vertex_tool_list.append(Tool(function_declarations=[decl]))
 
         self.vertex_tools = vertex_tool_list
         self.synaptic_tools = list(all_tools.values())
