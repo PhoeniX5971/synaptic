@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, List
 
-from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter
+from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter, VertexAdapter
 from .base import History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
 from .tool import Tool, ToolCall
@@ -24,6 +24,8 @@ class Model:
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] | None = None,
+        location: str = None,  # type: ignore
+        project: str = None,  # type: ignore
         instructions: str = "",
         response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
         response_schema: Any = None,  # type: ignore
@@ -83,7 +85,9 @@ class Model:
             raise ValueError(
                 "Response schema must be provided for sturctured response formats"
             )
+        self.location = location
         self.instructions = instructions
+        self.project = project
         self.llm = self._initiate_model()
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
@@ -138,6 +142,21 @@ class Model:
                 response_format=self.response_format,
                 response_schema=self.response_schema,
                 instructions=self.instructions,
+            )
+        elif self.provider == Provider.VERTEX:
+            return VertexAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=(
+                    self.tools if self.response_format == ResponseFormat.NONE else None
+                ),
+                history=self.history,
+                api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
+                instructions=self.instructions,
+                location=self.location,
+                project=self.project,
             )
         elif self.provider == Provider.DEEPSEEK:
             return DeepSeekAdapter(
