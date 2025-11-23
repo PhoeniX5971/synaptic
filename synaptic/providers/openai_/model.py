@@ -109,7 +109,6 @@ class OpenAIAdapter(BaseModel):
         return messages
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
-
         messages = self.to_messages()
 
         # ★ PREPEND SYSTEM INSTRUCTIONS ★
@@ -155,22 +154,27 @@ class OpenAIAdapter(BaseModel):
         )
 
         created = datetime.now().astimezone(timezone.utc)
-        choice = response.choices[0]
 
-        # Extract content
-        message_text = (
-            choice.message.content
-            if choice.message and choice.message.content
-            else "No content available"
-        )
-
-        # Extract tool calls
+        # Extract content from all choices
+        message_texts = []
         tool_calls: List[ToolCall] = []
 
         for choice in response.choices:
             msg = choice.message
-            if msg and msg.function_call:
-                fc = msg.function_call
-                tool_calls.append(ToolCall(name=fc.name, args=json.loads(fc.arguments)))
+            if msg:
+                # Collect content
+                if msg.content:
+                    message_texts.append(msg.content)
+
+                # Collect tool calls
+                if msg.function_call:
+                    fc = msg.function_call
+                    tool_calls.append(
+                        ToolCall(name=fc.name, args=json.loads(fc.arguments))
+                    )
+
+        message_text = (
+            "\n".join(message_texts) if message_texts else "No content available"
+        )
 
         return ResponseMem(message=message_text, created=created, tool_calls=tool_calls)
