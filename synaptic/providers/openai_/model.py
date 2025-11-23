@@ -166,8 +166,11 @@ class OpenAIAdapter(BaseModel):
 
         # Extract tool calls
         tool_calls: List[ToolCall] = []
-        if choice.message and choice.message.function_call:
-            fc = choice.message.function_call
-            tool_calls.append(ToolCall(name=fc.name, args=json.loads(fc.arguments)))
+
+        for choice in response.choices:
+            msg = choice.message
+            if msg and msg.function_call:
+                fc = msg.function_call
+                tool_calls.append(ToolCall(name=fc.name, args=json.loads(fc.arguments)))
 
         return ResponseMem(message=message_text, created=created, tool_calls=tool_calls)
