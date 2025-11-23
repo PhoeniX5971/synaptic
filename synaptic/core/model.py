@@ -70,8 +70,6 @@ class Model:
         self.provider = provider
         self.model = model
         self.temperature = temperature
-        if api_key == "":
-            raise ValueError("API key must be provided")
         self.api_key = api_key
         self.max_tokens = max_tokens
         self.tools = tools or None
