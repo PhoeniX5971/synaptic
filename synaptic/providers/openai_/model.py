@@ -1,24 +1,13 @@
 import json
 from datetime import datetime, timezone
-from typing import Any, List
-
-from dotenv import load_dotenv
+from typing import Any, List, Optional, Dict
 from openai import OpenAI
-from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
 
-load_dotenv()
-
 
 class OpenAIAdapter(BaseModel):
-
     def __init__(
         self,
         model: str,
@@ -28,153 +17,147 @@ class OpenAIAdapter(BaseModel):
         response_schema: Any,
         temperature: float = 0.8,
         tools: list | None = None,
-        instructions: str = "",  # ← NEW
+        instructions: str = "",
+        **kwargs,
     ):
-
         self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.synaptic_tools = tools
-        self.openai_tools = []
+        self.synaptic_tools = tools or []
+        self.openai_tools: List[Dict] = []
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
-        self.instructions = instructions  # ← NEW
-        register_callback(self._invalidate_tools)
-        self._invalidate_tools()
+        self.instructions = instructions
         self.role_map = {
             "user": "user",
             "assistant": "assistant",
             "system": "system",
         }
 
+        register_callback(self._invalidate_tools)
+        self._invalidate_tools()
+
     def _invalidate_tools(self):
+        """Update OpenAI tools when registry changes"""
         self._convert_tools()
 
-    def _convert_tools(self):
+    def _convert_tools(self) -> None:
+        """Convert synaptic tools + TOOL_REGISTRY to OpenAI tool format"""
         self.openai_tools = []
 
-        # if self.response_format != ResponseFormat.NONE:
-        #     return None
-
+        # Deduplicate tools
         all_tools = {}
-
         for t in self.synaptic_tools or []:
             all_tools[t.name] = t
-
         for t_name, t in TOOL_REGISTRY.items():
             if t_name not in all_tools:
                 all_tools[t_name] = t
 
+        # Convert to OpenAI tool format
         for t_name, t in all_tools.items():
-            self.openai_tools.append(
-                {
-                    "name": t.name,
-                    "description": t.declaration.get("description", ""),
-                    "parameters": t.declaration.get("parameters", {}),
-                }
-            )
+            self.openai_tools.append({"type": "function", "function": t.declaration})
 
         self.synaptic_tools = list(all_tools.values())
 
-    def to_messages(self) -> list[ChatCompletionMessageParam]:
-        messages: list[ChatCompletionMessageParam] = []
+    def to_contents(self) -> List[Dict[str, Any]]:
+        """Convert memory list to OpenAI-style messages"""
+        contents = []
 
         for memory in self.history.MemoryList:
-            content_text = memory.message + f"\n(Created at: {memory.created})"
+            message_content = memory.message
+            if hasattr(memory, "created"):
+                message_content += f" (Created at: {memory.created})"
 
-            if isinstance(memory, ResponseMem):
-                if memory.tool_calls:
-                    content_text += f"\nTool calls: {memory.tool_calls}"
-                if getattr(memory, "tool_results", []):
-                    content_text += f"\nTool results: {memory.tool_results}"
+            message: Dict[str, Any] = {
+                "role": self.role_map.get(memory.role, "user"),
+                "content": message_content,
+            }
 
-            role = self.role_map.get(memory.role, "user")
+            # Add tool calls for assistant responses
+            if isinstance(memory, ResponseMem) and getattr(memory, "tool_calls", None):
+                message["tool_calls"] = [
+                    {
+                        "id": f"call_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": call.name,
+                            "arguments": json.dumps(call.args) if call.args else "{}",
+                        },
+                    }
+                    for i, call in enumerate(memory.tool_calls)
+                ]
 
-            if role == "user":
-                msg = ChatCompletionUserMessageParam(content=content_text, role="user")
-            elif role == "system":
-                msg = ChatCompletionSystemMessageParam(
-                    content=content_text, role="system"
-                )
-            elif role == "assistant":
-                msg = ChatCompletionAssistantMessageParam(
-                    content=content_text, role="assistant"
-                )
-            else:
-                msg = ChatCompletionUserMessageParam(content=content_text, role="user")
+            # Add tool results for user messages following tool calls
+            if isinstance(memory, ResponseMem) and getattr(
+                memory, "tool_results", None
+            ):
+                message["content"] += f"\nTool results: {memory.tool_results}"
 
-            messages.append(msg)
+            contents.append(message)
 
-        return messages
+        # Add system instructions if provided
+        if self.instructions:
+            contents.insert(0, {"role": "system", "content": self.instructions})
+
+        return contents
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
-        messages = self.to_messages()
+        """Invoke OpenAI model with modern API using to_contents style"""
+        role = self.role_map.get(role, "user")
 
-        # ★ PREPEND SYSTEM INSTRUCTIONS ★
-        if self.instructions:
-            messages.insert(
-                0,
-                ChatCompletionSystemMessageParam(
-                    content=self.instructions, role="system"
-                ),
-            )
+        messages = self.to_contents() + [{"role": role, "content": prompt}]
 
-        # Add user/system/assistant message for this prompt
-        if role == "user":
-            message = ChatCompletionUserMessageParam(content=prompt, role="user")
-        elif role == "assistant":
-            message = ChatCompletionAssistantMessageParam(
-                content=prompt, role="assistant"
-            )
-        elif role == "system":
-            message = ChatCompletionSystemMessageParam(content=prompt, role="system")
-        else:
-            message = ChatCompletionUserMessageParam(content=prompt, role="user")
-
-        messages.append(message)
-
-        params = {
+        request_params = {
             "model": self.model,
+            "temperature": self.temperature,
             "messages": messages,
-            "functions": self.openai_tools,
-            **kwargs,
+            "max_tokens": kwargs.get("max_tokens", 1024),
         }
 
-        # JSON schema mode
+        # Handle response format
         if self.response_format == ResponseFormat.JSON:
-            params["response_format"] = self.response_schema
-            params["functions"] = None
+            request_params["response_format"] = {"type": "json_object"}
+        elif hasattr(self.response_schema, "model_json_schema"):
+            request_params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": self.response_schema.__name__,
+                    "schema": self.response_schema.model_json_schema(),
+                },
+            }
 
-        # Normal or JSON-mode call
-        response = (
-            self.client.chat.completions.parse(**params)
-            if self.response_format == ResponseFormat.JSON
-            else self.client.chat.completions.create(**params)
-        )
+        if self.openai_tools and self.response_format == ResponseFormat.NONE:
+            request_params["tools"] = self.openai_tools
+            request_params["tool_choice"] = "auto"
+
+        try:
+            response = self.client.chat.completions.create(**request_params)
+        except Exception:
+            response = self.client.chat.completions.create(**request_params)
 
         created = datetime.now().astimezone(timezone.utc)
-
-        # Extract content from all choices
-        message_texts = []
+        message = ""
         tool_calls: List[ToolCall] = []
 
-        for choice in response.choices:
-            msg = choice.message
-            if msg:
-                # Collect content
-                if msg.content:
-                    message_texts.append(msg.content)
+        if response.choices:
+            choice = response.choices[0]
+            message_content = choice.message.content or ""
+            message = message_content
 
-                # Collect tool calls
-                if msg.function_call:
-                    fc = msg.function_call
-                    tool_calls.append(
-                        ToolCall(name=fc.name, args=json.loads(fc.arguments))
-                    )
+            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                for tool_call in choice.message.tool_calls:
+                    if hasattr(tool_call, "function"):
+                        try:
+                            args = (
+                                json.loads(tool_call.function.arguments)
+                                if tool_call.function.arguments
+                                else {}
+                            )
+                        except json.JSONDecodeError:
+                            args = {}
+                        tool_calls.append(
+                            ToolCall(name=tool_call.function.name, args=args)
+                        )
 
-        message_text = (
-            "\n".join(message_texts) if message_texts else "No content available"
-        )
-
-        return ResponseMem(message=message_text, created=created, tool_calls=tool_calls)
+        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
