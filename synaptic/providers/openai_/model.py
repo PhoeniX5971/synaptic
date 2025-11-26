@@ -97,6 +97,18 @@ class OpenAIAdapter(BaseModel):
             ):
                 for i, result in enumerate(memory.tool_results):
                     # Match tool_call_id by index
+                    try:
+                        if hasattr(result, "model_dump"):
+                            content_str = json.dumps(result.model_dump())
+                        elif hasattr(result, "__dict__"):
+                            content_str = json.dumps(result.__dict__)
+                        elif isinstance(result, (dict, list)):
+                            content_str = json.dumps(result)
+                        else:
+                            content_str = str(result)
+                    except Exception:
+                        content_str = str(result)
+
                     tool_message = {
                         "role": "tool",
                         "name": (
@@ -104,11 +116,7 @@ class OpenAIAdapter(BaseModel):
                             if memory.tool_calls
                             else f"tool_{i}"
                         ),
-                        "content": (
-                            json.dumps(result)
-                            if isinstance(result, (dict, list))
-                            else str(result)
-                        ),
+                        "content": content_str,
                         "tool_call_id": f"call_{i}",
                     }
                     contents.append(tool_message)
