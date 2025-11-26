@@ -61,10 +61,11 @@ class OpenAIAdapter(BaseModel):
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> List[Dict[str, Any]]:
-        """Convert memory list to OpenAI-style messages"""
+        """Convert memory list to OpenAI-style messages with proper tool messages."""
         contents = []
 
         for memory in self.history.MemoryList:
+            # Base message
             message_content = memory.message
             if hasattr(memory, "created"):
                 message_content += f" (Created at: {memory.created})"
@@ -88,13 +89,29 @@ class OpenAIAdapter(BaseModel):
                     for i, call in enumerate(memory.tool_calls)
                 ]
 
-            # Add tool results for user messages following tool calls
+            contents.append(message)
+
+            # Add separate tool messages for each tool result
             if isinstance(memory, ResponseMem) and getattr(
                 memory, "tool_results", None
             ):
-                message["content"] += f"\nTool results: {memory.tool_results}"
-
-            contents.append(message)
+                for i, result in enumerate(memory.tool_results):
+                    # Match tool_call_id by index
+                    tool_message = {
+                        "role": "tool",
+                        "name": (
+                            memory.tool_calls[i].name
+                            if memory.tool_calls
+                            else f"tool_{i}"
+                        ),
+                        "content": (
+                            json.dumps(result)
+                            if isinstance(result, (dict, list))
+                            else str(result)
+                        ),
+                        "tool_call_id": f"call_{i}",
+                    }
+                    contents.append(tool_message)
 
         # Add system instructions if provided
         if self.instructions:
