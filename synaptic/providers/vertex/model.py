@@ -72,6 +72,9 @@ class VertexAdapter(BaseModel):
     def _convert_tools(self):
         """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
         all_tools = {}
+        all_declarations: List[FunctionDeclaration] = (
+            []
+        )  # <-- New list for declarations
 
         # merge local tools + registry
         for t in self.synaptic_tools:
@@ -80,14 +83,9 @@ class VertexAdapter(BaseModel):
             if name not in all_tools:
                 all_tools[name] = t
 
-        vertex_tool_list = []
-
         for _, tool in all_tools.items():
             decl = tool.declaration
 
-            # ---------------------------------------------
-            # FIX: Convert dict → FunctionDeclaration
-            # ---------------------------------------------
             if isinstance(decl, dict):
                 decl = FunctionDeclaration(
                     name=decl.get("name"),  # type: ignore
@@ -95,10 +93,18 @@ class VertexAdapter(BaseModel):
                     parameters=decl.get("parameters"),  # type: ignore
                 )
 
-            # decl is now guaranteed to be FunctionDeclaration
-            vertex_tool_list.append(Tool(function_declarations=[decl]))
+            # Add the declaration to the consolidated list
+            all_declarations.append(decl)
 
-        self.vertex_tools = vertex_tool_list
+        # ----------------------------------------------------
+        # The Fix: Wrap all declarations in a single Tool object
+        # ----------------------------------------------------
+        if all_declarations:
+            # `self.vertex_tools` will now contain a list with only ONE Tool object
+            self.vertex_tools = [Tool(function_declarations=all_declarations)]
+        else:
+            self.vertex_tools = []  # handle case with no tools
+
         self.synaptic_tools = list(all_tools.values())
 
     # ----------------------

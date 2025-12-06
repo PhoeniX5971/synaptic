@@ -117,38 +117,6 @@ class GeminiAdapter(BaseModel):
             config.response_mime_type = "application/json"
             config.tools = None
 
-        #     tool_declarations = [
-        #         decl
-        #         for tool in (self.gemini_tools or [])
-        #         for decl in (tool.function_declarations or [])
-        #     ]
-        #
-        #     tool_declarations_text = json.dumps(
-        #         [decl.model_dump() for decl in tool_declarations]
-        #     )
-        #     tools = [
-        #         types.Content(
-        #             role=self.role_map.get("system", "user"),
-        #             parts=[
-        #                 types.Part(
-        #                     text=(
-        #                         "Available Tools, call in structured output as 'synaptic_calls':\n"
-        #                         + tool_declarations_text
-        #                     )
-        #                 )
-        #             ],
-        #         )
-        #     ]
-        #
-        #     ExtendedSchema = create_model(
-        #         "ExtendedSchema",
-        #         __base__=self.response_schema,
-        #         synaptic_calls=(Optional[List[PToolCall]], None),
-        #     )
-        #     config.response_schema = ExtendedSchema
-        #
-        #     contents = tools + content
-        #
         if self.instructions:
             instructions = [
                 types.Content(
@@ -157,18 +125,6 @@ class GeminiAdapter(BaseModel):
                 )
             ]
             contents = instructions + contents
-        #
-        # # FIX: LOGGER
-        # print("\n\n=== Contents ===\n\n")
-        # for i, content in enumerate(contents, 1):
-        #     print(f"--- Content #{i} ---")
-        #     print(f"Role: {content.role}")
-        #     for j, part in enumerate(
-        #         content.parts or [], 1
-        #     ):  # <-- default to empty list
-        #         print(f" Part #{j}: {part.text}\n")
-        #
-        # print("\n\n=== End Contents ===\n\n")
 
         # Call Gemini
         response = self.client.models.generate_content(
