@@ -183,9 +183,11 @@ class VertexAdapter(BaseModel):
 
             if cand.content and cand.content.parts:
                 for p in cand.content.parts:
+                    # Collect text if it exists
                     if p.text:
                         message += p.text
 
+                    # Collect function calls
                     if p.function_call:
                         tool_calls.append(
                             ToolCall(
@@ -193,6 +195,9 @@ class VertexAdapter(BaseModel):
                                 args=p.function_call.args or {},
                             )
                         )
+                        # Optional: include a placeholder in the message if no text
+                        if not p.text:
+                            message += f"[Function call: {p.function_call.name}]"
 
         return ResponseMem(
             message=message,
