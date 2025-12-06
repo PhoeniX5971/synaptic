@@ -181,23 +181,26 @@ class VertexAdapter(BaseModel):
         if response.candidates:
             cand = response.candidates[0]
 
+            # 1. Safely check for function calls directly from the candidate
+            if cand.function_calls:  # This is a direct list provided by the SDK
+                for fc in cand.function_calls:
+                    tool_calls.append(
+                        ToolCall(
+                            name=fc.name,
+                            args=dict(fc.args) or {},  # Ensure args is a dict
+                        )
+                    )
+
+            # 2. Extract text from the parts list
             if cand.content and cand.content.parts:
                 for p in cand.content.parts:
-                    # Collect text if it exists
                     if p.text:
                         message += p.text
 
-                    # Collect function calls
-                    if p.function_call:
-                        tool_calls.append(
-                            ToolCall(
-                                name=p.function_call.name,
-                                args=p.function_call.args or {},
-                            )
-                        )
-                        # Optional: include a placeholder in the message if no text
-                        if not p.text:
-                            message += f"[Function call: {p.function_call.name}]"
+            # 3. Handle the case where the model only returns a function call (message is still "")
+            if tool_calls and not message:
+                # Set a non-error state for the message if the model only requested a tool.
+                message = ""
 
         return ResponseMem(
             message=message,
