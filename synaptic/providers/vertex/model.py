@@ -57,7 +57,7 @@ class VertexAdapter(BaseModel):
         self.role_map = {
             "user": "user",
             "assistant": "model",
-            "system": "system",
+            "system": "user",
         }
 
         register_callback(self._invalidate_tools)
@@ -144,9 +144,7 @@ class VertexAdapter(BaseModel):
         messages: List[Content] = history_contents + [user_message]
 
         if self.instructions:
-            system_msg = Content(
-                role="system", parts=[Part.from_text(self.instructions)]
-            )
+            system_msg = Content(role="user", parts=[Part.from_text(self.instructions)])
             messages = [system_msg] + messages
 
         # ----------------------
