@@ -20,13 +20,13 @@ class Model:
         temperature: float = 0.8,
         api_key: str = "",  # type: ignore
         max_tokens: int = 1024,
-        tools: List[Tool] = None,  # type: ignore
+        tools: Optional[List[Tool]] = None,
         history: History | None = None,
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] | None = None,
-        location: str = None,  # type: ignore
-        project: str = None,  # type: ignore
+        location: Optional[str] = None,
+        project: Optional[str] = None,
         instructions: str = "",
         response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
         response_schema: Any = None,  # type: ignore
@@ -116,13 +116,13 @@ class Model:
             description: initiate the model based on the provider
         """
         # initialize the model based on the provider
+        tools = self.tools if self.response_format == ResponseFormat.NONE else None
+
         if self.provider == Provider.OPENAI:
             return OpenAIAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=(
-                    self.tools if self.response_format == ResponseFormat.NONE else None
-                ),
+                tools=tools,
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -133,9 +133,7 @@ class Model:
             return GeminiAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=(
-                    self.tools if self.response_format == ResponseFormat.NONE else None
-                ),
+                tools=tools,
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -146,24 +144,20 @@ class Model:
             return VertexAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=(
-                    self.tools if self.response_format == ResponseFormat.NONE else None
-                ),
+                tools=tools,
                 history=self.history,
                 api_key=None,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
                 instructions=self.instructions,
-                location=self.location,
-                project=self.project,
+                location=self.location,  # type: ignore
+                project=self.project,  # type: ignore
             )
         elif self.provider == Provider.DEEPSEEK:
             return DeepSeekAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=(
-                    self.tools if self.response_format == ResponseFormat.NONE else None
-                ),
+                tools=tools,
                 history=self.history,  # type: ignore
                 api_key=self.api_key,
                 response_format=self.response_format,
@@ -174,9 +168,7 @@ class Model:
             return GeminiAdapter(
                 model=self.model,
                 temperature=self.temperature,
-                tools=(
-                    self.tools if self.response_format == ResponseFormat.NONE else None
-                ),
+                tools=tools,
                 history=self.history,
                 api_key=self.api_key,
                 response_format=self.response_format,
