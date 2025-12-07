@@ -1,8 +1,5 @@
-import json
 from datetime import datetime, timezone
-from typing import Any, List, Optional, Dict
-
-from pydantic import BaseModel as PBM
+from typing import Any, List, Optional
 
 from dotenv import load_dotenv
 
@@ -17,15 +14,10 @@ from vertexai.generative_models import (
 )
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
+from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback, Tool as ST
 
 
 load_dotenv()
-
-
-class PToolCall(PBM):
-    name: str
-    args: Optional[Dict[str, Any]] = None
 
 
 class VertexAdapter(BaseModel):
@@ -34,12 +26,12 @@ class VertexAdapter(BaseModel):
         model: str,
         project: str,
         location: str,
-        history: History,
-        api_key: str,
+        history: History | None,
         response_format: ResponseFormat,
         response_schema: Any,
+        tools: Optional[List[ST]],
+        api_key: str | None = None,
         temperature: float = 0.8,
-        tools: list | None = None,
         instructions: str = "",
     ):
         vertex_init(project=project, location=location)
@@ -48,7 +40,7 @@ class VertexAdapter(BaseModel):
         self.model = GenerativeModel(model)
         self.temperature = temperature
         self.history = history
-        self.synaptic_tools = tools or []
+        self.synaptic_tools = list(tools or [])
         self.vertex_tools: List[Tool] = []
         self.instructions = instructions
         self.response_format = response_format
@@ -111,8 +103,10 @@ class VertexAdapter(BaseModel):
     # History → Vertex content
     # ----------------------
     def to_contents(self) -> List[Content]:
-        messages = []
+        contents = []
 
+        if self.history is None:
+            return contents
         for mem in self.history.MemoryList:
             parts = [Part.from_text(mem.message)]
             parts.append(Part.from_text(f"(Created at: {mem.created})"))
@@ -123,14 +117,14 @@ class VertexAdapter(BaseModel):
                 if getattr(mem, "tool_results", []):
                     parts.append(Part.from_text(f"Tool results: {mem.tool_results}"))
 
-            messages.append(
+            contents.append(
                 Content(
                     role=self.role_map.get(mem.role, "user"),
                     parts=parts,
                 )
             )
 
-        return messages
+        return contents
 
     # ----------------------
     # Main Invoke
@@ -155,7 +149,7 @@ class VertexAdapter(BaseModel):
         elif self.response_format == ResponseFormat.JSON:
             response_mime = "application/json"
         else:
-            response_mime = None
+            response_mime = "text/plain"
 
         config = GenerationConfig(
             temperature=self.temperature,

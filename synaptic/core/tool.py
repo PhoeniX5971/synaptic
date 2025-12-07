@@ -43,15 +43,25 @@ class Tool:
             raise ValueError("Function must be a callable")
         else:
             self.function = function
+            self.is_async = inspect.iscoroutinefunction(function)
+
         self.default_params = default_params or {}
         if add_to_registry:
             TOOL_REGISTRY[name] = self
             _notify_change()
 
-    def run(self, **kwargs) -> Any:
-        # Merge default params with runtime kwargs
-        final_kwargs = {**self.default_params, **kwargs}
-        return self.function(**final_kwargs)
+        if self.is_async:
+            self.run = self._run_async
+        else:
+            self.run = self._run_sync
+
+    def _run_sync(self, **kwargs):
+        final = {**self.default_params, **kwargs}
+        return self.function(**final)
+
+    async def _run_async(self, **kwargs):
+        final = {**self.default_params, **kwargs}
+        return await self.function(**final)
 
     def __repr__(self) -> str:
         decl_summary = {

@@ -1,39 +1,31 @@
-import json
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Dict
-
-from pydantic import BaseModel as PBM
 
 import google.genai as genai
 from dotenv import load_dotenv
 from google.genai import types
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
+from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
 
 load_dotenv()
-
-
-class PToolCall(PBM):
-    name: str
-    args: Optional[Dict[str, Any]] = None
 
 
 class GeminiAdapter(BaseModel):
     def __init__(
         self,
         model: str,
-        history: History,
+        history: History | None,
         api_key: str,
         response_format: ResponseFormat,
         response_schema: Any,
+        tools: Optional[List[Tool]],
         temperature: float = 0.8,
-        tools: list | None = None,
         instructions: str = "",
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
-        self.synaptic_tools = tools or []
+        self.synaptic_tools = list(tools or [])
         self.gemini_tools: List[types.Tool] = []
         self.temperature = temperature
         self.history = history
@@ -77,6 +69,8 @@ class GeminiAdapter(BaseModel):
         """Convert all memories to Gemini Content objects."""
         contents = []
 
+        if self.history is None:
+            return contents
         for memory in self.history.MemoryList:
             parts: list[types.Part] = [types.Part(text=memory.message)]
             parts.append(types.Part(text=f"(Created at: {memory.created})"))
@@ -115,6 +109,9 @@ class GeminiAdapter(BaseModel):
             config.response_mime_type = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
             config.response_mime_type = "application/json"
+            # To avoid errors and unclear/unpredictable outputs
+            # Models DO NOT ACCEPT AND WILL NOT CALL FUNCTIONS
+            # if they are expected to output in formats
             config.tools = None
 
         if self.instructions:

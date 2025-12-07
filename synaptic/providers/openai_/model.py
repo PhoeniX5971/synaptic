@@ -1,28 +1,28 @@
 import json
 from datetime import datetime, timezone
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 from openai import OpenAI
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
+from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
 
 
 class OpenAIAdapter(BaseModel):
     def __init__(
         self,
         model: str,
-        history: History,
+        history: History | None,
         api_key: str,
         response_format: ResponseFormat,
         response_schema: Any,
+        tools: Optional[List[Tool]],
         temperature: float = 0.8,
-        tools: list | None = None,
         instructions: str = "",
         **kwargs,
     ):
         self.client = OpenAI(api_key=api_key)
         self.model = model
-        self.synaptic_tools = tools or []
+        self.synaptic_tools = list(tools or [])
         self.openai_tools: List[Dict] = []
         self.temperature = temperature
         self.history = history
@@ -63,6 +63,9 @@ class OpenAIAdapter(BaseModel):
     def to_contents(self) -> List[Dict[str, Any]]:
         """Convert memory list to OpenAI-style messages with proper tool messages."""
         contents = []
+
+        if self.history is None:
+            return contents
 
         for memory in self.history.MemoryList:
             # Base message
