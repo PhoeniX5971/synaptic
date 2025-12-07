@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timezone
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Dict
 from openai import OpenAI
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem

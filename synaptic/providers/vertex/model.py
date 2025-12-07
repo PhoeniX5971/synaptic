@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Dict
 
-from pydantic import BaseModel as PBM, create_model
+from pydantic import BaseModel as PBM
 
 from dotenv import load_dotenv
 

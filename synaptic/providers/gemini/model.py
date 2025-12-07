@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, List, Optional, Dict
 
-from pydantic import BaseModel as PBM, create_model, ConfigDict
+from pydantic import BaseModel as PBM
 
 import google.genai as genai
 from dotenv import load_dotenv
