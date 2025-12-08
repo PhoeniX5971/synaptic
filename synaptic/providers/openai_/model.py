@@ -145,15 +145,16 @@ class OpenAIAdapter(BaseModel):
 
         # Handle response format
         if self.response_format == ResponseFormat.JSON:
-            request_params["response_format"] = {"type": "json_object"}
-        elif hasattr(self.response_schema, "model_json_schema"):
-            request_params["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": self.response_schema.__name__,
-                    "schema": self.response_schema.model_json_schema(),
-                },
-            }
+            if hasattr(self.response_schema, "model_json_schema"):
+                request_params["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": self.response_schema.__name__,
+                        "schema": self.response_schema.model_json_schema(),
+                    },
+                }
+            else:
+                request_params["response_format"] = {"type": "json_object"}
 
         if self.openai_tools and self.response_format == ResponseFormat.NONE:
             request_params["tools"] = self.openai_tools

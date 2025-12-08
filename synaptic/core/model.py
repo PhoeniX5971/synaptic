@@ -21,7 +21,7 @@ class Model:
         api_key: str = "",  # type: ignore
         max_tokens: int = 1024,
         tools: Optional[List[Tool]] = None,
-        history: History | None = None,
+        history: Optional[History] = None,
         autorun: bool = False,
         automem: bool = False,
         blacklist: List[str] | None = None,
@@ -76,7 +76,7 @@ class Model:
         self.tools = tools or []
         self.autorun = autorun
         self.automem = automem
-        self.history: Optional[History] = history or History() if automem else history
+        self.history = history or History()
         self.blacklist = blacklist or []
         self.response_format = response_format
         self.response_schema = response_schema
@@ -90,6 +90,9 @@ class Model:
         self.llm = self._initiate_model()
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
+
+        if not self.automem:
+            self.history.window(1)
 
     def bind_tools(self, tools: List[Tool]) -> None:
         """

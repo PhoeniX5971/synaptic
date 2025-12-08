@@ -109,6 +109,8 @@ class GeminiAdapter(BaseModel):
             config.response_mime_type = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
             config.response_mime_type = "application/json"
+            if self.response_schema is not None:
+                config.response_schema = self.response_schema
             # To avoid errors and unclear/unpredictable outputs
             # Models DO NOT ACCEPT AND WILL NOT CALL FUNCTIONS
             # if they are expected to output in formats
