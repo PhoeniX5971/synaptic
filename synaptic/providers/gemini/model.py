@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Any, List, Optional, Dict
+from typing import Any, List, Optional
 
 import google.genai as genai
 from dotenv import load_dotenv
@@ -48,6 +48,7 @@ class GeminiAdapter(BaseModel):
         """Convert synaptic Tool objects + TOOL_REGISTRY to Gemini types.Tool objects with logs."""
         self.gemini_tools = []
 
+        # TODO: rethink this. It's not gonna register tools but might want to clear them to None anyways
         # if self.response_format != ResponseFormat.NONE:
         #     return
         # Use a dict to deduplicate by name

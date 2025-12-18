@@ -2,20 +2,19 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from dotenv import load_dotenv
-
 from vertexai import init as vertex_init
 from vertexai.generative_models import (
+    Content,
+    FunctionDeclaration,
+    GenerationConfig,
     GenerativeModel,
     Part,
-    Content,
     Tool,
-    GenerationConfig,
-    FunctionDeclaration,
 )
 
 from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback, Tool as ST
-
+from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
+from ...core.tool import Tool as ST
 
 load_dotenv()
 
