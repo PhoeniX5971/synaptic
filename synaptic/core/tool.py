@@ -1,5 +1,5 @@
 import inspect
-from typing import Callable, Any, get_origin, get_args
+from typing import Callable, Any
 
 TOOL_REGISTRY = {}
 _registry_callbacks = []  # FOR SUBSCRIBED MODELS
@@ -95,71 +95,51 @@ def autotool(
     default_params: dict | None = None,
     autobind: bool = True,
 ):
+    """
+    Decorator to automatically create a Tool from a function.
+    param_descriptions: optional dict mapping parameter names to descriptions
+    """
     param_descriptions = param_descriptions or {}
 
     def decorator(func: Callable[..., Any]) -> Tool:
         sig = inspect.signature(func)
         properties = {}
-        required_params = []
 
         for name, param in sig.parameters.items():
-            # 1. Skip instance/class references
-            if name in ["self", "cls"]:
-                continue
-
-            # 2. Robust Type Resolution (Handling Optional/Union)
+            # Determine JSON type from annotation
             anno = param.annotation
-            origin = get_origin(anno)
-            args = get_args(anno)
-
-            # Extract base type from Optional[T] or Union[T, None]
-            if origin is not None:
-                # Basic support for Union/Optional: take the first non-None type
-                base_type = next((a for a in args if a is not type(None)), str)
-            else:
-                base_type = anno
-
-            # Map to JSON Schema types
-            if base_type in [int, float]:
-                ptype = "number" if base_type is float else "integer"
-            elif base_type is bool:
+            if anno in [int, float]:
+                ptype = "number" if anno is float else "integer"
+            elif anno is bool:
                 ptype = "boolean"
-            elif base_type is str:
+            elif anno is str:
                 ptype = "string"
             else:
-                ptype = "string"  # Fallback
+                ptype = "string"  # fallback
 
             properties[name] = {
                 "type": ptype,
-                "description": param_descriptions.get(name, ""),
+                "description": param_descriptions.get(name, ""),  # default empty
             }
-
-            # 3. Only mark as required if there is no default value
-            if param.default is inspect.Parameter.empty:
-                required_params.append(name)
-
-        # 4. Construct parameters object
-        parameters = {
-            "type": "object",
-            "properties": properties,
-        }
-
-        # ONLY include the "required" key if there are actually required params
-        if required_params:
-            parameters["required"] = required_params
 
         declaration = {
             "name": func.__name__,
             "description": description,
-            "parameters": parameters,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": list(sig.parameters.keys()),
+            },
         }
 
-        return Tool(
+        tool = Tool(
             name=func.__name__,
             declaration=declaration,
             function=func,
             default_params=default_params,
             add_to_registry=autobind,
         )
+
+        return tool
 
     return decorator
