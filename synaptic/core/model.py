@@ -1,6 +1,8 @@
+import inspect
+import types
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, List, Optional
-import inspect
 
 from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter, VertexAdapter
 from .base import History, ResponseFormat, ResponseMem, UserMem
@@ -93,6 +95,16 @@ class Model:
 
         if not self.automem:
             self.history.window(1)
+
+    def bind_tool(tool: Tool, instance) -> Tool:
+        bound_fn = types.MethodType(tool.function, instance)
+        return Tool(
+            name=tool.name,
+            declaration=deepcopy(tool.declaration),
+            function=bound_fn,
+            default_params=tool.default_params,
+            add_to_registry=False,
+        )
 
     def bind_tools(self, tools: List[Tool]) -> None:
         """
