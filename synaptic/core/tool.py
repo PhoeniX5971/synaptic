@@ -106,6 +106,10 @@ def autotool(
         properties = {}
 
         for name, param in sig.parameters.items():
+            # SKIP 'self' or 'cls' so they don't end up in the AI's JSON schema
+            # Happens in classes (where self is in the params of the method)
+            if name in ["self", "cls"]:
+                continue
             # Determine JSON type from annotation
             anno = param.annotation
             if anno in [int, float]:
