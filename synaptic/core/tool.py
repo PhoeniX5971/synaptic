@@ -25,11 +25,6 @@ def _notify_change():
 
 
 class Tool:
-    """
-    Tool type for better support of tools, allows for easier access of it's attributes.
-    Constructor Attributes:
-    """
-
     def __init__(
         self,
         name: str,
@@ -42,11 +37,10 @@ class Tool:
         self.declaration = declaration
         if not callable(function):
             raise ValueError("Function must be a callable")
-        else:
-            self.function = function
-            self.is_async = inspect.iscoroutinefunction(function)
-
+        self.function = function
+        self.is_async = inspect.iscoroutinefunction(function)
         self.default_params = default_params or {}
+
         if add_to_registry:
             TOOL_REGISTRY[name] = self
             _notify_change()
@@ -56,21 +50,21 @@ class Tool:
         else:
             self.run = self._run_sync
 
-        def __get__(self, instance, owner):
-            if instance is None:
-                return self
+    def __get__(self, instance, owner):
+        """
+        Descriptor access to automatically bind methods to instances.
+        """
+        if instance is None:
+            return self  # accessed via class
 
-            bound_fn = types.MethodType(self.function, instance)
-
-            tool = Tool(
-                name=self.name,
-                declaration=self.declaration,
-                function=bound_fn,
-                default_params=self.default_params,
-                add_to_registry=False,
-            )
-
-            return tool
+        bound_fn = types.MethodType(self.function, instance)
+        return Tool(
+            name=self.name,
+            declaration=self.declaration,
+            function=bound_fn,
+            default_params=self.default_params,
+            add_to_registry=False,
+        )
 
     def _run_sync(self, **kwargs):
         final = {**self.default_params, **kwargs}
@@ -79,14 +73,6 @@ class Tool:
     async def _run_async(self, **kwargs):
         final = {**self.default_params, **kwargs}
         return await self.function(**final)
-
-    def __repr__(self) -> str:
-        decl_summary = {
-            k: self.declaration[k]
-            for k in ("name", "description")
-            if k in self.declaration
-        }
-        return f"<Tool name={self.name!r}, declaration={decl_summary}, default_params={self.default_params}>"
 
 
 class ToolCall:
