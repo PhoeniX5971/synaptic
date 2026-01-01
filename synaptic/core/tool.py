@@ -1,5 +1,5 @@
 import inspect
-from typing import Callable, Any
+from typing import Callable, Any, get_origin, get_args
 
 TOOL_REGISTRY = {}
 _registry_callbacks = []  # FOR SUBSCRIBED MODELS
@@ -100,42 +100,58 @@ def autotool(
     def decorator(func: Callable[..., Any]) -> Tool:
         sig = inspect.signature(func)
         properties = {}
-        required_params = []  # Track required params manually
+        required_params = []
 
         for name, param in sig.parameters.items():
-            # 1. SKIP internal Python arguments
+            # 1. Skip instance/class references
             if name in ["self", "cls"]:
                 continue
 
-            # Determine JSON type
+            # 2. Robust Type Resolution (Handling Optional/Union)
             anno = param.annotation
-            if anno in [int, float]:
-                ptype = "number" if anno is float else "integer"
-            elif anno is bool:
+            origin = get_origin(anno)
+            args = get_args(anno)
+
+            # Extract base type from Optional[T] or Union[T, None]
+            if origin is not None:
+                # Basic support for Union/Optional: take the first non-None type
+                base_type = next((a for a in args if a is not type(None)), str)
+            else:
+                base_type = anno
+
+            # Map to JSON Schema types
+            if base_type in [int, float]:
+                ptype = "number" if base_type is float else "integer"
+            elif base_type is bool:
                 ptype = "boolean"
-            elif anno is str:
+            elif base_type is str:
                 ptype = "string"
             else:
-                ptype = "string"
+                ptype = "string"  # Fallback
 
             properties[name] = {
                 "type": ptype,
                 "description": param_descriptions.get(name, ""),
             }
 
-            # 2. Add to required only if it's not a skipped param
-            # and doesn't have a default value
+            # 3. Only mark as required if there is no default value
             if param.default is inspect.Parameter.empty:
                 required_params.append(name)
+
+        # 4. Construct parameters object
+        parameters = {
+            "type": "object",
+            "properties": properties,
+        }
+
+        # ONLY include the "required" key if there are actually required params
+        if required_params:
+            parameters["required"] = required_params
 
         declaration = {
             "name": func.__name__,
             "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-                "required": required_params,  # Use our filtered list
-            },
+            "parameters": parameters,
         }
 
         return Tool(
