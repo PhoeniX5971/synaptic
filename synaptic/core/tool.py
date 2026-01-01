@@ -1,5 +1,6 @@
 import inspect
 from typing import Callable, Any
+import types
 
 TOOL_REGISTRY = {}
 _registry_callbacks = []  # FOR SUBSCRIBED MODELS
@@ -54,6 +55,22 @@ class Tool:
             self.run = self._run_async
         else:
             self.run = self._run_sync
+
+        def __get__(self, instance, owner):
+            if instance is None:
+                return self
+
+            bound_fn = types.MethodType(self.function, instance)
+
+            tool = Tool(
+                name=self.name,
+                declaration=self.declaration,
+                function=bound_fn,
+                default_params=self.default_params,
+                add_to_registry=False,
+            )
+
+            return tool
 
     def _run_sync(self, **kwargs):
         final = {**self.default_params, **kwargs}
