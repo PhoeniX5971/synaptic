@@ -95,18 +95,19 @@ def autotool(
     default_params: dict | None = None,
     autobind: bool = True,
 ):
-    """
-    Decorator to automatically create a Tool from a function.
-    param_descriptions: optional dict mapping parameter names to descriptions
-    """
     param_descriptions = param_descriptions or {}
 
-    def decorator(func: Callable[..., Any]) -> Tool:
+    def decorator(func: Callable[..., Any]):
         sig = inspect.signature(func)
-        properties = {}
+        properties: dict[str, dict] = {}
+        required_params: list[str] = []
 
         for name, param in sig.parameters.items():
-            # Determine JSON type from annotation
+            # skip instance/class receivers
+            if name in ("self", "cls"):
+                continue
+
+            # determine JSON type (simplified)
             anno = param.annotation
             if anno in [int, float]:
                 ptype = "number" if anno is float else "integer"
@@ -115,31 +116,32 @@ def autotool(
             elif anno is str:
                 ptype = "string"
             else:
-                ptype = "string"  # fallback
+                ptype = "string"
 
             properties[name] = {
                 "type": ptype,
-                "description": param_descriptions.get(name, ""),  # default empty
+                "description": param_descriptions.get(name, ""),
             }
+
+            if param.default is inspect.Parameter.empty:
+                required_params.append(name)
+
+        parameters = {"type": "object", "properties": properties}
+        if required_params:
+            parameters["required"] = required_params
 
         declaration = {
             "name": func.__name__,
             "description": description,
-            "parameters": {
-                "type": "object",
-                "properties": properties,
-                "required": list(sig.parameters.keys()),
-            },
+            "parameters": parameters,
         }
 
-        tool = Tool(
+        return Tool(
             name=func.__name__,
             declaration=declaration,
             function=func,
             default_params=default_params,
             add_to_registry=autobind,
         )
-
-        return tool
 
     return decorator
