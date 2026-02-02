@@ -85,8 +85,8 @@ class GeminiAdapter(BaseModel):
         if self.history is None:
             return contents
         for memory in self.history.MemoryList:
-            parts: list[types.Part] = [types.Part(text=memory.message)]
-            parts.append(types.Part(text=f"(Note that this entry was created at: {memory.created})//Keep this info to yourself."))
+            parts: list[types.Part] = [types.Part(text=memory.message + "\n")]
+            # parts.append(types.Part(text=f"(Note that this entry was created at: {memory.created})//Keep this info to yourself."))
 
             if isinstance(memory, ResponseMem):
                 # Add tool calls as extra parts
