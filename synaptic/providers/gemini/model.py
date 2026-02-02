@@ -115,9 +115,7 @@ class GeminiAdapter(BaseModel):
 
         role = self.role_map.get(role, "user")
 
-        contents = self.to_contents()
-        content = [types.Content(role=role, parts=[types.Part(text=prompt)])]
-        contents = contents + content
+        contents = []
 
         if self.response_format == ResponseFormat.NONE:
             config.response_mime_type = "text/plain"
@@ -130,14 +128,25 @@ class GeminiAdapter(BaseModel):
             # if they are expected to output in formats
             config.tools = None
 
+        # 1. System instructions FIRST
         if self.instructions:
-            instructions = [
+            contents.append(
                 types.Content(
                     role=self.role_map.get("system", "user"),
                     parts=[types.Part(text=self.instructions)],
                 )
-            ]
-            contents = instructions + contents
+            )
+
+        # 2. Memory + history
+        contents.extend(self.to_contents())
+
+        # 3. Current prompt LAST
+        contents.append(
+            types.Content(
+                role=self.role_map.get(role, "user"),
+                parts=[types.Part(text=prompt)],
+            )
+        )
 
         # Call Gemini (non-streaming)
         response = self.client.models.generate_content(
