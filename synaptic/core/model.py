@@ -330,3 +330,70 @@ class Model:
             self.history.add(memory)
 
         return memory
+
+    async def astream(
+        self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+    ):
+        """
+        astream:
+            Async generator wrapper around provider streaming (llm.astream).
+            - Yields raw chunks from the provider's astream().
+            - If autorun=True, runs tool calls as they appear (using _arun_tools).
+            - If automem=True, saves the user prompt and final ResponseMem into history.
+            - Produces the same chunk objects the provider yields (no transformation).
+        """
+        # verify role
+        if role not in ["user", "assistant", "system"]:
+            raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
+
+        # priority: argument > instance setting
+        autorun = autorun if (autorun is not None) else self.autorun
+        automem = automem if (automem is not None) else self.automem
+
+        # ensure the underlying LLM supports streaming
+        if not hasattr(self.llm, "astream"):
+            raise NotImplementedError("Underlying model does not implement astream()")
+
+        created = datetime.now().astimezone(timezone.utc)
+
+        accumulated_message = ""
+        tool_calls: List[ToolCall] = []
+        tool_results: List[Any] = []
+
+        # Iterate provider async stream and yield chunks downstream
+        async for chunk in self.llm.astream(prompt=prompt, role=role, **kwargs):
+            # Yield the chunk as-is so callers receive it in real-time
+            yield chunk
+
+            # Collect text pieces if they exist
+            if getattr(chunk, "text", None):
+                accumulated_message += chunk.text
+
+            # If the chunk contains a function call, collect and optionally run it immediately
+            if getattr(chunk, "function_call", None):
+                # Record the call
+                tool_calls.append(chunk.function_call)
+
+                # If autorun, execute this call now (supports async and sync tools)
+                if autorun and chunk.function_call:
+                    try:
+                        # _arun_tools expects a list
+                        tr = await self._arun_tools([chunk.function_call])
+                        tool_results.extend(tr)
+                    except Exception as e:
+                        # keep streaming even if a tool fails; append the error to results
+                        tool_results.append({"name": chunk.function_call.name, "error": str(e)})
+
+        # Stream finished — assemble the final ResponseMem and attach tool results
+        final_mem = ResponseMem(message=accumulated_message, created=created, tool_calls=tool_calls)
+        final_mem.tool_results = tool_results
+
+        # If automem, persist UserMem + ResponseMem
+        if automem and self.history:
+            self.history.add(UserMem(message=prompt, role=role, created=created))
+            self.history.add(final_mem)
+
+        # NOTE: async generators can't "return" a value usefully; the final memory
+        # is available in history (or in 'final_mem' if you adapt this function to expose it).
+        # If you want a programmatic handle, callers can inspect `model.history.MemoryList[-1]`.
+        return

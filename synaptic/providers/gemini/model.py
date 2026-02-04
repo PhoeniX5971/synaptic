@@ -273,3 +273,4 @@ class GeminiAdapter(BaseModel):
 
         # Final chunk to indicate completion (you can ignore the text here if you want)
         yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+
