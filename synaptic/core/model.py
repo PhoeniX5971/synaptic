@@ -91,6 +91,9 @@ class Model:
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
 
+        if tools:
+            self.bind_tools(tools)
+
         if not self.automem:
             self.history.window(1)
 
