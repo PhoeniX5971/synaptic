@@ -116,7 +116,8 @@ class History:
             The updated MemoryList.
         """
         self.size = size
-        self._size_update()
+        while len(self.MemoryList) > self.size:
+            self.MemoryList.pop(0)
         return self.MemoryList
 
     def add(self, memory: Memory) -> None:
