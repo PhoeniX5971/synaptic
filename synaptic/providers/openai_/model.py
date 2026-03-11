@@ -65,6 +65,9 @@ class OpenAIAdapter(BaseModel):
         """Convert memory list to OpenAI-style messages with proper tool messages."""
         contents = []
 
+        if self.instructions:
+            contents.append({"role": "system", "content": self.instructions})
+
         if self.history is None:
             return contents
 
@@ -119,9 +122,6 @@ class OpenAIAdapter(BaseModel):
                             "tool_call_id": f"call_{i}",
                         }
                     )
-
-        if self.instructions:
-            contents.insert(0, {"role": "system", "content": self.instructions})
 
         return contents
 

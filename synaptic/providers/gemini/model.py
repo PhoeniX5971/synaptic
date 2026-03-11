@@ -73,22 +73,43 @@ class GeminiAdapter(BaseModel):
 
         if self.history is None:
             return contents
+
         for memory in self.history.MemoryList:
-            parts: list[types.Part] = [types.Part(text=memory.message + "\n")]
+            if isinstance(memory, ResponseMem) and memory.tool_calls:
+                # Model turn: text + one FunctionCall part per tool call
+                parts: list[types.Part] = []
+                if memory.message:
+                    parts.append(types.Part(text=memory.message))
+                for tc in memory.tool_calls:
+                    parts.append(
+                        types.Part(
+                            function_call=types.FunctionCall(name=tc.name, args=tc.args)
+                        )
+                    )
+                contents.append(types.Content(role="model", parts=parts))
 
-            if isinstance(memory, ResponseMem):
-                if memory.tool_calls:
-                    calls_text = "Tool calls: " + str(memory.tool_calls)
-                    parts.append(types.Part(text=calls_text))
-                if getattr(memory, "tool_results", []):
-                    results_text = "Tool results: " + str(memory.tool_results)
-                    parts.append(types.Part(text=results_text))
-
-            contents.append(
-                types.Content(
-                    role=(self.role_map.get(memory.role, "user")), parts=parts
+                # User turn: one FunctionResponse per call, linked by name
+                tool_results = getattr(memory, "tool_results", None) or []
+                if tool_results:
+                    response_parts: list[types.Part] = []
+                    for tc, result in zip(memory.tool_calls, tool_results):
+                        resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
+                        response_parts.append(
+                            types.Part(
+                                function_response=types.FunctionResponse(
+                                    name=tc.name,
+                                    response={"result": resp},
+                                )
+                            )
+                        )
+                    contents.append(types.Content(role="user", parts=response_parts))
+            else:
+                parts = [types.Part(text=memory.message)]
+                contents.append(
+                    types.Content(
+                        role=self.role_map.get(memory.role, "user"), parts=parts
+                    )
                 )
-            )
 
         return contents
 

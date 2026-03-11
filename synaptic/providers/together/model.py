@@ -67,27 +67,52 @@ class TogetherAdapter(BaseModel):
         self.synaptic_tools = list(all_tools.values())
 
     def to_messages(self) -> List[Dict]:
-        """Convert all memories to Together chat message format."""
+        """Convert all memories to Together/OpenAI chat message format."""
         messages: List[Dict] = []
 
         if self.history is None:
             return messages
 
         for memory in self.history.MemoryList:
-            content_text = memory.message
+            if isinstance(memory, ResponseMem) and memory.tool_calls:
+                # Assistant turn with tool_calls — each call gets a unique ID by index
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": memory.message or "",
+                        "tool_calls": [
+                            {
+                                "id": f"call_{i}",
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.args) if tc.args else "{}",
+                                },
+                            }
+                            for i, tc in enumerate(memory.tool_calls)
+                        ],
+                    }
+                )
 
-            if isinstance(memory, ResponseMem):
-                if memory.tool_calls:
-                    content_text += f"\nTool calls: {memory.tool_calls}"
-                if getattr(memory, "tool_results", []):
-                    content_text += f"\nTool results: {memory.tool_results}"
-
-            messages.append(
-                {
-                    "role": self.role_map.get(memory.role, "user"),
-                    "content": content_text,
-                }
-            )
+                # One tool result message per call, linked by ID
+                tool_results = getattr(memory, "tool_results", None) or []
+                for i, (tc, result) in enumerate(zip(memory.tool_calls, tool_results)):
+                    content_str = json.dumps(result) if isinstance(result, dict) else str(result)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": f"call_{i}",
+                            "name": tc.name,
+                            "content": content_str,
+                        }
+                    )
+            else:
+                messages.append(
+                    {
+                        "role": self.role_map.get(memory.role, "user"),
+                        "content": memory.message,
+                    }
+                )
 
         return messages
 

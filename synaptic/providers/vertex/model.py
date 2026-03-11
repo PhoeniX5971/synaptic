@@ -94,21 +94,31 @@ class VertexAdapter(BaseModel):
 
         if self.history is None:
             return contents
+
         for mem in self.history.MemoryList:
-            parts = [Part.from_text(mem.message)]
+            if isinstance(mem, ResponseMem) and mem.tool_calls:
+                # Model turn: text + function calls are implicit; Vertex only needs the text
+                model_parts = [Part.from_text(mem.message)] if mem.message else [Part.from_text("")]
+                contents.append(Content(role="model", parts=model_parts))
 
-            if isinstance(mem, ResponseMem):
-                if mem.tool_calls:
-                    parts.append(Part.from_text(f"Tool calls: {mem.tool_calls}"))
-                if getattr(mem, "tool_results", []):
-                    parts.append(Part.from_text(f"Tool results: {mem.tool_results}"))
-
-            contents.append(
-                Content(
-                    role=self.role_map.get(mem.role, "user"),
-                    parts=parts,
+                # User turn: one FunctionResponse per call, linked by name
+                tool_results = getattr(mem, "tool_results", None) or []
+                if tool_results:
+                    response_parts = []
+                    for tc, result in zip(mem.tool_calls, tool_results):
+                        resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
+                        response_parts.append(
+                            Part.from_function_response(
+                                name=tc.name,
+                                response={"result": resp},
+                            )
+                        )
+                    contents.append(Content(role="user", parts=response_parts))
+            else:
+                parts = [Part.from_text(mem.message)]
+                contents.append(
+                    Content(role=self.role_map.get(mem.role, "user"), parts=parts)
                 )
-            )
 
         return contents
 
