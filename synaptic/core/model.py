@@ -2,7 +2,14 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 import inspect
 
-from ..providers import DeepSeekAdapter, GeminiAdapter, OpenAIAdapter, VertexAdapter
+from ..providers import (
+    DeepSeekAdapter,
+    GeminiAdapter,
+    OpenAIAdapter,
+    TogetherAdapter,
+    UniversalLLMAdapter,
+    VertexAdapter,
+)
 from .base import History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
 from .tool import Tool, ToolCall
@@ -30,6 +37,7 @@ class Model:
         instructions: str = "",
         response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
         response_schema: Any = None,  # type: ignore
+        base_url: Optional[str] = None,
     ) -> None:
         """
         Constructor:
@@ -39,6 +47,10 @@ class Model:
                 values:
                     - OPENAI
                     - GEMINI
+                    - DEEPSEEK
+                    - VERTEX
+                    - TOGETHER
+                    - UNIVERSAL_OPENAI
         model:
             type: str
             description: model name to use from the provider
@@ -63,11 +75,13 @@ class Model:
         automem:
             type: bool
             description: whether to automatically store interactions in history
-        blkacklist:
+        blacklist:
             type: List[str]
             description: list of tool names to ignore in autorun
+        base_url:
+            type: Optional[str]
+            description: base URL for UNIVERSAL_OPENAI provider
         """
-        # set attribute values
         self.provider = provider
         self.model = model
         self.temperature = temperature
@@ -85,8 +99,10 @@ class Model:
                 "Response schema must be provided for structured response formats"
             )
         self.location = location
-        self.instructions = instructions
         self.project = project
+        self.base_url = base_url
+        # Store instructions privately; the property syncs changes to self.llm
+        self._instructions = instructions
         self.llm = self._initiate_model()
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
@@ -97,6 +113,20 @@ class Model:
         if not self.automem:
             self.history.window(1)
 
+    # ------------------------------------------------------------------
+    # Dynamic instructions — setting model.instructions updates the
+    # underlying adapter in-place without rebuilding anything.
+    # ------------------------------------------------------------------
+    @property
+    def instructions(self) -> str:
+        return self._instructions
+
+    @instructions.setter
+    def instructions(self, value: str) -> None:
+        self._instructions = value
+        if hasattr(self, "llm"):
+            self.llm.instructions = value
+
     def bind_tools(self, tools: List[Tool]) -> None:
         """
         bind_tools:
@@ -106,7 +136,6 @@ class Model:
                 - List[Tool] -- File: synaptic.core.tool Class Tool
             description: bind additional tools to the model
         """
-        # append the tools
         if self.tools is None:
             self.tools = []
         self.tools += tools
@@ -121,7 +150,6 @@ class Model:
             parameters: None
             description: initiate the model based on the provider
         """
-        # initialize the model based on the provider
         tools = self.tools if self.response_format == ResponseFormat.NONE else None
 
         if self.provider == Provider.OPENAI:
@@ -133,7 +161,7 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
-                instructions=self.instructions,
+                instructions=self._instructions,
             )
         elif self.provider == Provider.GEMINI:
             return GeminiAdapter(
@@ -144,7 +172,7 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
-                instructions=self.instructions,
+                instructions=self._instructions,
             )
         elif self.provider == Provider.VERTEX:
             return VertexAdapter(
@@ -155,7 +183,7 @@ class Model:
                 api_key=None,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
-                instructions=self.instructions,
+                instructions=self._instructions,
                 location=self.location,  # type: ignore
                 project=self.project,  # type: ignore
             )
@@ -168,6 +196,30 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
+                instructions=self._instructions,
+            )
+        elif self.provider == Provider.TOGETHER:
+            return TogetherAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=tools,
+                history=self.history,
+                api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
+                instructions=self._instructions,
+            )
+        elif self.provider == Provider.UNIVERSAL_OPENAI:
+            return UniversalLLMAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=tools,
+                history=self.history,
+                api_key=self.api_key,
+                base_url=self.base_url or "",
+                response_format=self.response_format,
+                response_schema=self.response_schema,
+                instructions=self._instructions,
             )
         # default to Gemini if unknown
         else:
@@ -179,7 +231,7 @@ class Model:
                 api_key=self.api_key,
                 response_format=self.response_format,
                 response_schema=self.response_schema,
-                instructions=self.instructions,
+                instructions=self._instructions,
             )
 
     def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
@@ -230,7 +282,6 @@ class Model:
 
             if tool and name not in self.blacklist:
                 try:
-                    # The magic line:
                     res = tool.run(**args)
                     if inspect.iscoroutine(res):
                         res = await res
@@ -259,26 +310,21 @@ class Model:
                 - **kwargs: additional parameters for the model's invoke method
             description: invoke the model with a prompt optionally, optionally provide role, auto run tools and auto manage memory
         """
-        # verify role
         if role not in ["user", "assistant", "system"]:
             raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
         created = datetime.now().astimezone(timezone.utc)
 
-        # send to provider specific invokation
         memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
 
-        # do priority check for autorun and automem -- in call > in object
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
 
-        # run auto management
         if autorun:
             if any(tool.is_async for tool in self.llm.synaptic_tools):
                 raise RuntimeError("invoke() cannot run async tools; use ainvoke()")
             if memory.tool_calls:
                 tool_results = self._run_tools(memory.tool_calls)
-                # Attach results for downstream use
                 memory.tool_results = tool_results
         else:
             memory.tool_results = []
@@ -303,24 +349,19 @@ class Model:
                 - **kwargs: additional parameters for the model's invoke method
             description: same as invoke but async, utilizes a different async runner
         """
-        # verify role
         if role not in ["user", "assistant", "system"]:
             raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
         created = datetime.now().astimezone(timezone.utc)
 
-        # send to provider specific invokation
         memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
 
-        # do priority check for autorun and automem -- in call > in object
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
 
-        # run auto management
         if autorun:
             if memory.tool_calls:
                 tool_results = await self._arun_tools(memory.tool_calls)
-                # Attach results for downstream use
                 memory.tool_results = tool_results
         else:
             memory.tool_results = []
@@ -342,15 +383,12 @@ class Model:
             - If automem=True, saves the user prompt and final ResponseMem into history.
             - Produces the same chunk objects the provider yields (no transformation).
         """
-        # verify role
         if role not in ["user", "assistant", "system"]:
             raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
-        # priority: argument > instance setting
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
 
-        # ensure the underlying LLM supports streaming
         if not hasattr(self.llm, "astream"):
             raise NotImplementedError("Underlying model does not implement astream()")
 
@@ -360,40 +398,31 @@ class Model:
         tool_calls: List[ToolCall] = []
         tool_results: List[Any] = []
 
-        # Iterate provider async stream and yield chunks downstream
         async for chunk in self.llm.astream(prompt=prompt, role=role, **kwargs):
-            # Yield the chunk as-is so callers receive it in real-time
             yield chunk
 
-            # Collect text pieces if they exist
             if getattr(chunk, "text", None):
                 accumulated_message += chunk.text
 
-            # If the chunk contains a function call, collect and optionally run it immediately
             if getattr(chunk, "function_call", None):
-                # Record the call
                 tool_calls.append(chunk.function_call)
 
-                # If autorun, execute this call now (supports async and sync tools)
                 if autorun and chunk.function_call:
                     try:
-                        # _arun_tools expects a list
                         tr = await self._arun_tools([chunk.function_call])
                         tool_results.extend(tr)
                     except Exception as e:
-                        # keep streaming even if a tool fails; append the error to results
-                        tool_results.append({"name": chunk.function_call.name, "error": str(e)})
+                        tool_results.append(
+                            {"name": chunk.function_call.name, "error": str(e)}
+                        )
 
-        # Stream finished — assemble the final ResponseMem and attach tool results
-        final_mem = ResponseMem(message=accumulated_message, created=created, tool_calls=tool_calls)
+        final_mem = ResponseMem(
+            message=accumulated_message, created=created, tool_calls=tool_calls
+        )
         final_mem.tool_results = tool_results
 
-        # If automem, persist UserMem + ResponseMem
         if automem and self.history:
             self.history.add(UserMem(message=prompt, role=role, created=created))
             self.history.add(final_mem)
 
-        # NOTE: async generators can't "return" a value usefully; the final memory
-        # is available in history (or in 'final_mem' if you adapt this function to expose it).
-        # If you want a programmatic handle, callers can inspect `model.history.MemoryList[-1]`.
         return

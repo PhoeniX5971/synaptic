@@ -6,3 +6,5 @@ class Provider(enum.StrEnum):
     GEMINI = "gemini"
     DEEPSEEK = "deepseek"
     VERTEX = "vertex"
+    TOGETHER = "together"
+    UNIVERSAL_OPENAI = "universal_openai"

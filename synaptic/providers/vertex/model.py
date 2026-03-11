@@ -1,5 +1,7 @@
+import asyncio
+import threading
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from dotenv import load_dotenv
 from vertexai import init as vertex_init
@@ -12,7 +14,7 @@ from vertexai.generative_models import (
     Tool,
 )
 
-from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
+from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
 from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
 from ...core.tool import Tool as ST
 
@@ -54,20 +56,14 @@ class VertexAdapter(BaseModel):
         register_callback(self._invalidate_tools)
         self._invalidate_tools()
 
-    # ----------------------
-    # Tool Conversion
-    # ----------------------
     def _invalidate_tools(self):
         self._convert_tools()
 
     def _convert_tools(self):
         """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
         all_tools = {}
-        all_declarations: List[FunctionDeclaration] = (
-            []
-        )  # <-- New list for declarations
+        all_declarations: List[FunctionDeclaration] = []
 
-        # merge local tools + registry
         for t in self.synaptic_tools:
             all_tools[t.name] = t
         for name, t in TOOL_REGISTRY.items():
@@ -84,23 +80,15 @@ class VertexAdapter(BaseModel):
                     parameters=decl.get("parameters"),  # type: ignore
                 )
 
-            # Add the declaration to the consolidated list
             all_declarations.append(decl)
 
-        # ----------------------------------------------------
-        # The Fix: Wrap all declarations in a single Tool object
-        # ----------------------------------------------------
         if all_declarations:
-            # `self.vertex_tools` will now contain a list with only ONE Tool object
             self.vertex_tools = [Tool(function_declarations=all_declarations)]
         else:
-            self.vertex_tools = []  # handle case with no tools
+            self.vertex_tools = []
 
         self.synaptic_tools = list(all_tools.values())
 
-    # ----------------------
-    # History → Vertex content
-    # ----------------------
     def to_contents(self) -> List[Content]:
         contents = []
 
@@ -108,7 +96,6 @@ class VertexAdapter(BaseModel):
             return contents
         for mem in self.history.MemoryList:
             parts = [Part.from_text(mem.message)]
-            parts.append(Part.from_text(f"(Created at: {mem.created})"))
 
             if isinstance(mem, ResponseMem):
                 if mem.tool_calls:
@@ -125,9 +112,6 @@ class VertexAdapter(BaseModel):
 
         return contents
 
-    # ----------------------
-    # Main Invoke
-    # ----------------------
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
         role = self.role_map.get(role, "user")
 
@@ -140,9 +124,6 @@ class VertexAdapter(BaseModel):
             system_msg = Content(role="user", parts=[Part.from_text(self.instructions)])
             messages = [system_msg] + messages
 
-        # ----------------------
-        # Config
-        # ----------------------
         if self.response_format == ResponseFormat.NONE:
             response_mime = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
@@ -155,9 +136,6 @@ class VertexAdapter(BaseModel):
             response_mime_type=response_mime,
         )
 
-        # ----------------------
-        # Call Vertex AI
-        # ----------------------
         response = self.model.generate_content(
             messages,
             generation_config=config,
@@ -168,35 +146,106 @@ class VertexAdapter(BaseModel):
         message = ""
         tool_calls: List[ToolCall] = []
 
-        # ----------------------
-        # Parse Vertex response
-        # ----------------------
         if response.candidates:
             cand = response.candidates[0]
 
-            # 1. Safely check for function calls directly from the candidate
-            if cand.function_calls:  # This is a direct list provided by the SDK
+            if cand.function_calls:
                 for fc in cand.function_calls:
                     tool_calls.append(
                         ToolCall(
                             name=fc.name,
-                            args=dict(fc.args) or {},  # Ensure args is a dict
+                            args=dict(fc.args) or {},
                         )
                     )
 
-            # 2. Extract text from the parts list
             if cand.content and cand.content.parts:
                 for p in cand.content.parts:
                     if p.text:
                         message += p.text
-
-            # 3. Handle the case where the model only returns a function call (message is still "")
-            if tool_calls and not message:
-                # Set a non-error state for the message if the model only requested a tool.
-                message = ""
 
         return ResponseMem(
             message=message,
             created=created,
             tool_calls=tool_calls,
         )
+
+    async def astream(
+        self, prompt: str, role: str = "user", **kwargs
+    ) -> AsyncIterator[ResponseChunk]:
+        """
+        Asynchronously stream response chunks from Vertex AI.
+
+        Runs generate_content_stream synchronously in a background thread and
+        pushes responses into an asyncio.Queue.
+        """
+        role = self.role_map.get(role, "user")
+
+        history_contents = self.to_contents()
+        user_message = Content(role=role, parts=[Part.from_text(prompt)])
+        messages: List[Content] = history_contents + [user_message]
+
+        if self.instructions:
+            system_msg = Content(role="user", parts=[Part.from_text(self.instructions)])
+            messages = [system_msg] + messages
+
+        if self.response_format == ResponseFormat.NONE:
+            response_mime = "text/plain"
+        elif self.response_format == ResponseFormat.JSON:
+            response_mime = "application/json"
+        else:
+            response_mime = "text/plain"
+
+        config = GenerationConfig(
+            temperature=self.temperature,
+            response_mime_type=response_mime,
+        )
+
+        loop = asyncio.get_running_loop()
+        q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
+
+        def producer():
+            try:
+                for response in self.model.generate_content_stream(
+                    messages,
+                    generation_config=config,
+                    tools=self.vertex_tools,
+                ):
+                    loop.call_soon_threadsafe(q.put_nowait, response)
+            except Exception as e:
+                loop.call_soon_threadsafe(q.put_nowait, e)
+            finally:
+                loop.call_soon_threadsafe(q.put_nowait, None)
+
+        threading.Thread(target=producer, daemon=True).start()
+
+        accumulated_message = ""
+        tool_calls: List[ToolCall] = []
+
+        while True:
+            item = await q.get()
+            if isinstance(item, Exception):
+                raise item
+            if item is None:
+                break
+
+            response = item
+            if not getattr(response, "candidates", None):
+                continue
+
+            cand = response.candidates[0]
+
+            if cand.function_calls:
+                for fc in cand.function_calls:
+                    tfc = ToolCall(name=fc.name, args=dict(fc.args) or {})
+                    tool_calls.append(tfc)
+                    yield ResponseChunk(text="", is_final=False, function_call=tfc)
+
+            if cand.content and cand.content.parts:
+                for part in cand.content.parts:
+                    if part.text:
+                        accumulated_message += part.text
+                        yield ResponseChunk(
+                            text=part.text, is_final=False, function_call=None
+                        )
+
+        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)

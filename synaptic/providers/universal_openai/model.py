@@ -10,28 +10,43 @@ from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, Resp
 from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
 
 
-class OpenAIAdapter(BaseModel):
+class UniversalLLMAdapter(BaseModel):
+    """
+    Adapter for any OpenAI-compatible API (vLLM, Ollama, local servers, etc.).
+
+    Supports:
+    - invoke() and astream()
+    - tool/function calling
+    - chat history
+    - optional JSON output mode
+    - system instructions
+    """
+
     def __init__(
         self,
         model: str,
         history: History | None,
-        api_key: str,
+        base_url: str,
+        api_key: Optional[str],
         response_format: ResponseFormat,
-        response_schema: Any,
-        tools: Optional[List[Tool]],
+        response_schema: Any = None,
+        tools: Optional[List[Tool]] = None,
         temperature: float = 0.8,
         instructions: str = "",
-        **kwargs,
     ):
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(
+            api_key=api_key or "none",
+            base_url=base_url,
+        )
         self.model = model
+        self.history = history
         self.synaptic_tools = list(tools or [])
         self.openai_tools: List[Dict] = []
         self.temperature = temperature
-        self.history = history
+        self.instructions = instructions
         self.response_format = response_format
         self.response_schema = response_schema
-        self.instructions = instructions
+
         self.role_map = {
             "user": "user",
             "assistant": "assistant",
@@ -42,11 +57,11 @@ class OpenAIAdapter(BaseModel):
         self._invalidate_tools()
 
     def _invalidate_tools(self):
-        """Update OpenAI tools when registry changes"""
+        """Update tools when registry changes."""
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic tools + TOOL_REGISTRY to OpenAI tool format"""
+        """Convert synaptic tools + TOOL_REGISTRY to OpenAI tool format."""
         self.openai_tools = []
 
         all_tools = {}
@@ -62,63 +77,27 @@ class OpenAIAdapter(BaseModel):
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> List[Dict[str, Any]]:
-        """Convert memory list to OpenAI-style messages with proper tool messages."""
-        contents = []
+        """Convert memory list to OpenAI-style messages."""
+        contents: List[Dict[str, Any]] = []
 
         if self.history is None:
             return contents
 
         for memory in self.history.MemoryList:
-            message_content = memory.message
+            content_text = memory.message
 
-            message: Dict[str, Any] = {
-                "role": self.role_map.get(memory.role, "user"),
-                "content": message_content,
-            }
+            if isinstance(memory, ResponseMem):
+                if memory.tool_calls:
+                    content_text += f"\nTool calls: {memory.tool_calls}"
+                if getattr(memory, "tool_results", []):
+                    content_text += f"\nTool results: {memory.tool_results}"
 
-            if isinstance(memory, ResponseMem) and getattr(memory, "tool_calls", None):
-                message["tool_calls"] = [
-                    {
-                        "id": f"call_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(call.args) if call.args else "{}",
-                        },
-                    }
-                    for i, call in enumerate(memory.tool_calls)
-                ]
-
-            contents.append(message)
-
-            if isinstance(memory, ResponseMem) and getattr(
-                memory, "tool_results", None
-            ):
-                for i, result in enumerate(memory.tool_results):
-                    try:
-                        if hasattr(result, "model_dump"):
-                            content_str = json.dumps(result.model_dump())
-                        elif hasattr(result, "__dict__"):
-                            content_str = json.dumps(result.__dict__)
-                        elif isinstance(result, (dict, list)):
-                            content_str = json.dumps(result)
-                        else:
-                            content_str = str(result)
-                    except Exception:
-                        content_str = str(result)
-
-                    contents.append(
-                        {
-                            "role": "tool",
-                            "name": (
-                                memory.tool_calls[i].name
-                                if memory.tool_calls
-                                else f"tool_{i}"
-                            ),
-                            "content": content_str,
-                            "tool_call_id": f"call_{i}",
-                        }
-                    )
+            contents.append(
+                {
+                    "role": self.role_map.get(memory.role, "user"),
+                    "content": content_text,
+                }
+            )
 
         if self.instructions:
             contents.insert(0, {"role": "system", "content": self.instructions})
@@ -126,38 +105,26 @@ class OpenAIAdapter(BaseModel):
         return contents
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
-        """Invoke OpenAI model with modern API using to_contents style"""
         role = self.role_map.get(role, "user")
 
         messages = self.to_contents() + [{"role": role, "content": prompt}]
 
-        request_params = {
+        request_params: Dict[str, Any] = {
             "model": self.model,
-            "temperature": self.temperature,
             "messages": messages,
-            "max_tokens": kwargs.get("max_tokens", 1024),
+            "temperature": self.temperature,
+            "max_tokens": kwargs.pop("max_tokens", 1024),
+            **kwargs,
         }
-
-        if self.response_format == ResponseFormat.JSON:
-            if hasattr(self.response_schema, "model_json_schema"):
-                request_params["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": self.response_schema.__name__,
-                        "schema": self.response_schema.model_json_schema(),
-                    },
-                }
-            else:
-                request_params["response_format"] = {"type": "json_object"}
 
         if self.openai_tools and self.response_format == ResponseFormat.NONE:
             request_params["tools"] = self.openai_tools
             request_params["tool_choice"] = "auto"
 
-        try:
-            response = self.client.chat.completions.create(**request_params)
-        except Exception:
-            response = self.client.chat.completions.create(**request_params)
+        if self.response_format == ResponseFormat.JSON:
+            request_params["response_format"] = {"type": "json_object"}
+
+        response = self.client.chat.completions.create(**request_params)
 
         created = datetime.now().astimezone(timezone.utc)
         message = ""
@@ -168,19 +135,17 @@ class OpenAIAdapter(BaseModel):
             message = choice.message.content or ""
 
             if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
-                for tool_call in choice.message.tool_calls:
-                    if hasattr(tool_call, "function"):
+                for tc in choice.message.tool_calls:
+                    if hasattr(tc, "function"):
                         try:
                             args = (
-                                json.loads(tool_call.function.arguments)
-                                if tool_call.function.arguments
+                                json.loads(tc.function.arguments)
+                                if tc.function.arguments
                                 else {}
                             )
                         except json.JSONDecodeError:
                             args = {}
-                        tool_calls.append(
-                            ToolCall(name=tool_call.function.name, args=args)
-                        )
+                        tool_calls.append(ToolCall(name=tc.function.name, args=args))
 
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
@@ -188,11 +153,11 @@ class OpenAIAdapter(BaseModel):
         self, prompt: str, role: str = "user", **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
-        Asynchronously stream response chunks from OpenAI.
+        Asynchronously stream response chunks from any OpenAI-compatible endpoint.
 
         Runs the sync streaming client in a background thread and pushes chunks
         into an asyncio.Queue. Tool call args are accumulated across deltas and
-        emitted as ResponseChunk(function_call=...) after the text stream ends.
+        emitted after the text stream ends.
         """
         role = self.role_map.get(role, "user")
 
@@ -200,9 +165,10 @@ class OpenAIAdapter(BaseModel):
 
         request_params: Dict[str, Any] = {
             "model": self.model,
-            "temperature": self.temperature,
             "messages": messages,
+            "temperature": self.temperature,
             "stream": True,
+            **kwargs,
         }
 
         if self.openai_tools and self.response_format == ResponseFormat.NONE:
@@ -225,7 +191,6 @@ class OpenAIAdapter(BaseModel):
         threading.Thread(target=producer, daemon=True).start()
 
         accumulated_message = ""
-        # index → {name, args} for incremental tool call assembly
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
         while True:
@@ -256,7 +221,6 @@ class OpenAIAdapter(BaseModel):
                     if tc_delta.function.arguments:
                         pending_tool_calls[idx]["args"] += tc_delta.function.arguments
 
-        # Emit fully-assembled tool calls after text stream completes
         for idx in sorted(pending_tool_calls):
             tc = pending_tool_calls[idx]
             try:

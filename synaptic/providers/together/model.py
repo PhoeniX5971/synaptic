@@ -5,13 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from dotenv import load_dotenv
-from openai import OpenAI
-from openai.types.chat import (
-    ChatCompletionAssistantMessageParam,
-    ChatCompletionMessageParam,
-    ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
-)
+from together import Together
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
 from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
@@ -19,28 +13,30 @@ from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
 load_dotenv()
 
 
-class DeepSeekAdapter(BaseModel):
-
+class TogetherAdapter(BaseModel):
     def __init__(
         self,
         model: str,
-        history: History,
+        history: History | None,
         api_key: str,
         response_format: ResponseFormat,
         response_schema: Any,
-        tools: Optional[List[Tool]] = None,
+        tools: Optional[List[Tool]],
         temperature: float = 0.8,
         instructions: str = "",
+        stream: bool = False,
     ):
-        self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        self.client = Together(api_key=api_key)
         self.model = model
         self.synaptic_tools = list(tools or [])
-        self.openai_tools: List[Dict] = []
+        self.together_tools: List[Dict] = []
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
         self.instructions = instructions
+        self.stream = stream
+
         self.role_map = {
             "user": "user",
             "assistant": "assistant",
@@ -51,15 +47,12 @@ class DeepSeekAdapter(BaseModel):
         self._invalidate_tools()
 
     def _invalidate_tools(self):
-        """Update OpenAI tools without mutating synaptic tools."""
+        """Update Together tools when registry changes."""
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic Tool objects + TOOL_REGISTRY to OpenAI function definitions."""
-        self.openai_tools = []
-
-        if self.response_format != ResponseFormat.NONE:
-            return
+        """Convert synaptic tools + TOOL_REGISTRY to Together/OpenAI tool format."""
+        self.together_tools = []
 
         all_tools = {}
         for t in self.synaptic_tools or []:
@@ -69,21 +62,16 @@ class DeepSeekAdapter(BaseModel):
                 all_tools[t_name] = t
 
         for t_name, t in all_tools.items():
-            self.openai_tools.append({"type": "function", "function": t.declaration})
+            self.together_tools.append({"type": "function", "function": t.declaration})
 
-        # Fixed: was inside loop before, assigned once after
         self.synaptic_tools = list(all_tools.values())
 
-    def to_messages(self) -> list[ChatCompletionMessageParam]:
-        """Convert all memories to OpenAI ChatCompletion message objects."""
-        messages: list[ChatCompletionMessageParam] = []
+    def to_messages(self) -> List[Dict]:
+        """Convert all memories to Together chat message format."""
+        messages: List[Dict] = []
 
-        if self.instructions:
-            messages.append(
-                ChatCompletionSystemMessageParam(
-                    content=self.instructions, role="system"
-                )
-            )
+        if self.history is None:
+            return messages
 
         for memory in self.history.MemoryList:
             content_text = memory.message
@@ -94,113 +82,112 @@ class DeepSeekAdapter(BaseModel):
                 if getattr(memory, "tool_results", []):
                     content_text += f"\nTool results: {memory.tool_results}"
 
-            role = self.role_map.get(memory.role, "user")
-
-            if role == "user":
-                msg: ChatCompletionMessageParam = ChatCompletionUserMessageParam(
-                    content=content_text, role="user"
-                )
-            elif role == "system":
-                msg = ChatCompletionSystemMessageParam(
-                    content=content_text, role="system"
-                )
-            elif role == "assistant":
-                msg = ChatCompletionAssistantMessageParam(
-                    content=content_text, role="assistant"
-                )
-            else:
-                msg = ChatCompletionUserMessageParam(content=content_text, role="user")
-
-            messages.append(msg)
+            messages.append(
+                {
+                    "role": self.role_map.get(memory.role, "user"),
+                    "content": content_text,
+                }
+            )
 
         return messages
 
     def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
-        messages = self.to_messages()
+        role = self.role_map.get(role, "user")
 
-        if role == "user":
-            messages.append(ChatCompletionUserMessageParam(content=prompt, role="user"))
-        elif role == "assistant":
-            messages.append(
-                ChatCompletionAssistantMessageParam(content=prompt, role="assistant")
-            )
-        elif role == "system":
-            messages.append(
-                ChatCompletionSystemMessageParam(content=prompt, role="system")
-            )
-        else:
-            messages.append(ChatCompletionUserMessageParam(content=prompt, role="user"))
+        messages: List[Dict] = []
 
-        params: Dict[str, Any] = {
+        system_message = self.instructions or ""
+        if self.response_format == ResponseFormat.JSON:
+            system_message += "\nYou must respond ONLY with valid JSON. Do not include explanations or markdown."
+
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+
+        messages.extend(self.to_messages())
+        messages.append({"role": role, "content": prompt})
+
+        request_params: Dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
-            **kwargs,
         }
 
-        if self.openai_tools and self.response_format == ResponseFormat.NONE:
-            params["tools"] = self.openai_tools
-            params["tool_choice"] = "auto"
+        if self.together_tools and self.response_format == ResponseFormat.NONE:
+            request_params["tools"] = self.together_tools
+            request_params["tool_choice"] = "auto"
 
         if self.response_format == ResponseFormat.JSON:
-            params["response_format"] = {"type": "json_object"}
+            request_params["response_format"] = {"type": "json_object"}
 
-        response = self.client.chat.completions.create(**params)
+        request_params.update(kwargs)
+
+        response = self.client.chat.completions.create(**request_params)
 
         created = datetime.now().astimezone(timezone.utc)
-        choice = response.choices[0]
-
-        message = (
-            choice.message.content if choice.message and choice.message.content else ""
-        )
-
+        message = ""
         tool_calls: List[ToolCall] = []
-        if choice.message and getattr(choice.message, "tool_calls", None):
-            for tc in choice.message.tool_calls:
-                if hasattr(tc, "function"):
-                    try:
-                        args = (
-                            json.loads(tc.function.arguments)
-                            if tc.function.arguments
-                            else {}
-                        )
-                    except json.JSONDecodeError:
-                        args = {}
-                    tool_calls.append(ToolCall(name=tc.function.name, args=args))
 
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        if response.choices:
+            choice = response.choices[0]
+            message = choice.message.content or ""
+
+            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
+                for tc in choice.message.tool_calls:
+                    if hasattr(tc, "function"):
+                        try:
+                            args = (
+                                json.loads(tc.function.arguments)
+                                if tc.function.arguments
+                                else {}
+                            )
+                        except json.JSONDecodeError:
+                            args = {}
+                        tool_calls.append(ToolCall(name=tc.function.name, args=args))
+
+        if self.response_format == ResponseFormat.JSON and not tool_calls:
+            try:
+                parsed = json.loads(message)
+                message = json.dumps(parsed)
+            except Exception:
+                pass
+
+        return ResponseMem(
+            message=message,
+            created=created,
+            tool_calls=tool_calls,
+        )
 
     async def astream(
         self, prompt: str, role: str = "user", **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
-        Asynchronously stream response chunks from DeepSeek.
+        Asynchronously stream response chunks from Together AI.
 
         Runs the sync streaming client in a background thread and pushes chunks
         into an asyncio.Queue. Tool call args are accumulated across deltas and
-        emitted as ResponseChunk(function_call=...) after the text stream ends.
+        emitted after the text stream ends.
         """
-        messages = self.to_messages()
+        role = self.role_map.get(role, "user")
 
-        if role == "user":
-            messages.append(ChatCompletionUserMessageParam(content=prompt, role="user"))
-        elif role == "assistant":
-            messages.append(
-                ChatCompletionAssistantMessageParam(content=prompt, role="assistant")
-            )
-        else:
-            messages.append(ChatCompletionUserMessageParam(content=prompt, role="user"))
+        messages: List[Dict] = []
+
+        system_message = self.instructions or ""
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+
+        messages.extend(self.to_messages())
+        messages.append({"role": role, "content": prompt})
 
         request_params: Dict[str, Any] = {
             "model": self.model,
-            "temperature": self.temperature,
             "messages": messages,
+            "temperature": self.temperature,
             "stream": True,
             **kwargs,
         }
 
-        if self.openai_tools and self.response_format == ResponseFormat.NONE:
-            request_params["tools"] = self.openai_tools
+        if self.together_tools and self.response_format == ResponseFormat.NONE:
+            request_params["tools"] = self.together_tools
             request_params["tool_choice"] = "auto"
 
         loop = asyncio.get_running_loop()
@@ -208,9 +195,8 @@ class DeepSeekAdapter(BaseModel):
 
         def producer():
             try:
-                with self.client.chat.completions.create(**request_params) as stream:
-                    for chunk in stream:
-                        loop.call_soon_threadsafe(q.put_nowait, chunk)
+                for chunk in self.client.chat.completions.create(**request_params):
+                    loop.call_soon_threadsafe(q.put_nowait, chunk)
             except Exception as e:
                 loop.call_soon_threadsafe(q.put_nowait, e)
             finally:
