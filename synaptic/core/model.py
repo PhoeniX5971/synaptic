@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 import inspect
 
 from ..providers import (
+    ClaudeAdapter,
     DeepSeekAdapter,
     GeminiAdapter,
     OpenAIAdapter,
@@ -50,6 +51,7 @@ class Model:
                     - DEEPSEEK
                     - VERTEX
                     - TOGETHER
+                    - CLAUDE
                     - UNIVERSAL_OPENAI
         model:
             type: str
@@ -152,7 +154,19 @@ class Model:
         """
         tools = self.tools if self.response_format == ResponseFormat.NONE else None
 
-        if self.provider == Provider.OPENAI:
+        if self.provider == Provider.CLAUDE:
+            return ClaudeAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=tools,
+                history=self.history,
+                api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
+                instructions=self._instructions,
+                max_tokens=self.max_tokens,
+            )
+        elif self.provider == Provider.OPENAI:
             return OpenAIAdapter(
                 model=self.model,
                 temperature=self.temperature,

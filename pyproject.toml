@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "An orchestration framework for large language models"
 authors = [{ name = "phoenix5971" }]
 dependencies = [
+	"anthropic",
 	"openai",
 	"google-generativeai",
 	"google-genai",

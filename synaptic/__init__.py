@@ -6,6 +6,7 @@ from .core.tool import Tool, autotool
 from .core.provider import Provider
 
 from .providers import (
+    ClaudeAdapter,
     GeminiAdapter,
     OpenAIAdapter,
     DeepSeekAdapter,
