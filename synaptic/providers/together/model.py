@@ -1,7 +1,10 @@
 import asyncio
+import base64
 import json
+import mimetypes
 import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -116,13 +119,23 @@ class TogetherAdapter(BaseModel):
 
         return messages
 
+    def _image_to_url(self, img: str) -> str:
+        """Return a data URI for local files, or pass through URLs as-is."""
+        p = Path(img)
+        if p.exists():
+            mime, _ = mimetypes.guess_type(img)
+            mime = mime or "application/octet-stream"
+            data = base64.b64encode(p.read_bytes()).decode()
+            return f"data:{mime};base64,{data}"
+        return img
+
     def _build_content(self, prompt: str, images: Optional[List[str]]) -> Any:
         """Return plain string content or a multipart content list when images are given."""
         if not images:
             return prompt
         parts: List[Dict] = [{"type": "text", "text": prompt}]
         for img in images:
-            parts.append({"type": "image_url", "image_url": {"url": img}})
+            parts.append({"type": "image_url", "image_url": {"url": self._image_to_url(img)}})
         return parts
 
     def invoke(self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs) -> ResponseMem:
