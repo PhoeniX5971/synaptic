@@ -311,7 +311,7 @@ class Model:
         return results
 
     def invoke(
-        self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
     ) -> ResponseMem:
         """
         invoke:
@@ -329,7 +329,7 @@ class Model:
 
         created = datetime.now().astimezone(timezone.utc)
 
-        memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
+        memory = self.llm.invoke(prompt=prompt, role=role, images=images, **kwargs)
 
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
@@ -350,7 +350,7 @@ class Model:
         return memory
 
     async def ainvoke(
-        self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
     ) -> ResponseMem:
         """
         ainvoke:
@@ -368,7 +368,7 @@ class Model:
 
         created = datetime.now().astimezone(timezone.utc)
 
-        memory = self.llm.invoke(prompt=prompt, role=role, **kwargs)
+        memory = self.llm.invoke(prompt=prompt, role=role, images=images, **kwargs)
 
         autorun = autorun if (autorun is not None) else self.autorun
         automem = automem if (automem is not None) else self.automem
@@ -387,7 +387,7 @@ class Model:
         return memory
 
     async def astream(
-        self, prompt: str, role: str = "user", autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
     ):
         """
         astream:
@@ -412,7 +412,7 @@ class Model:
         tool_calls: List[ToolCall] = []
         tool_results: List[Any] = []
 
-        async for chunk in self.llm.astream(prompt=prompt, role=role, **kwargs):
+        async for chunk in self.llm.astream(prompt=prompt, role=role, images=images, **kwargs):
             yield chunk
 
             if getattr(chunk, "text", None):

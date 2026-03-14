@@ -116,7 +116,16 @@ class TogetherAdapter(BaseModel):
 
         return messages
 
-    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
+    def _build_content(self, prompt: str, images: Optional[List[str]]) -> Any:
+        """Return plain string content or a multipart content list when images are given."""
+        if not images:
+            return prompt
+        parts: List[Dict] = [{"type": "text", "text": prompt}]
+        for img in images:
+            parts.append({"type": "image_url", "image_url": {"url": img}})
+        return parts
+
+    def invoke(self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs) -> ResponseMem:
         role = self.role_map.get(role, "user")
 
         messages: List[Dict] = []
@@ -129,7 +138,7 @@ class TogetherAdapter(BaseModel):
             messages.append({"role": "system", "content": system_message})
 
         messages.extend(self.to_messages())
-        messages.append({"role": role, "content": prompt})
+        messages.append({"role": role, "content": self._build_content(prompt, images)})
 
         request_params: Dict[str, Any] = {
             "model": self.model,
@@ -183,7 +192,7 @@ class TogetherAdapter(BaseModel):
         )
 
     async def astream(
-        self, prompt: str, role: str = "user", **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Together AI.
@@ -201,7 +210,7 @@ class TogetherAdapter(BaseModel):
             messages.append({"role": "system", "content": system_message})
 
         messages.extend(self.to_messages())
-        messages.append({"role": role, "content": prompt})
+        messages.append({"role": role, "content": self._build_content(prompt, images)})
 
         request_params: Dict[str, Any] = {
             "model": self.model,

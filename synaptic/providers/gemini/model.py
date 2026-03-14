@@ -191,7 +191,7 @@ class GeminiAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Gemini.
@@ -202,8 +202,13 @@ class GeminiAdapter(BaseModel):
         """
         role = self.role_map.get(role, "user")
 
+        prompt_parts: list[types.Part] = []
+        if prompt.strip():
+            prompt_parts.append(types.Part(text=prompt))
+        prompt_parts.extend(build_image_parts(images))
+
         contents = self.to_contents()
-        contents.append(types.Content(role=role, parts=[types.Part(text=prompt)]))
+        contents.append(types.Content(role=role, parts=prompt_parts))
 
         config = types.GenerateContentConfig(
             temperature=self.temperature,
