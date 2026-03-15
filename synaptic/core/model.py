@@ -10,6 +10,7 @@ from ..providers import (
     TogetherAdapter,
     UniversalLLMAdapter,
     VertexAdapter,
+    XAIAdapter,
 )
 from .base import History, ResponseFormat, ResponseMem, UserMem
 from .provider import Provider
@@ -214,6 +215,17 @@ class Model:
             )
         elif self.provider == Provider.TOGETHER:
             return TogetherAdapter(
+                model=self.model,
+                temperature=self.temperature,
+                tools=tools,
+                history=self.history,
+                api_key=self.api_key,
+                response_format=self.response_format,
+                response_schema=self.response_schema,
+                instructions=self._instructions,
+            )
+        elif self.provider == Provider.XAI:
+            return XAIAdapter(
                 model=self.model,
                 temperature=self.temperature,
                 tools=tools,

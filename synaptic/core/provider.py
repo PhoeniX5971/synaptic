@@ -9,3 +9,4 @@ class Provider(enum.StrEnum):
     VERTEX = "vertex"
     TOGETHER = "together"
     UNIVERSAL_OPENAI = "universal_openai"
+    XAI = "xai"
