@@ -5,3 +5,4 @@ from .deepseek import DeepSeekAdapter
 from .vertex import VertexAdapter
 from .together import TogetherAdapter
 from .universal_openai import UniversalLLMAdapter
+from .xai import XAIAdapter
