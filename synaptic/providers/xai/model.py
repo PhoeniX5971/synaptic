@@ -178,13 +178,29 @@ class XAIAdapter(BaseModel):
 
         return messages
 
-    def _build_user_message(self, prompt: str, images: Optional[List[Any]]) -> chat_pb2.Message:
+    def _upload_audio(self, src: Any) -> str:
+        """Upload an audio file and return its file_id."""
+        src_str = str(src)
+        p = Path(src_str)
+        if p.exists():
+            return self._sync_client.files.upload(src_str).id
+        # URL — download then upload
+        with urllib.request.urlopen(src_str) as r:
+            data = r.read()
+        from io import BytesIO
+        filename = Path(src_str.split("?")[0]).name or "audio.mp3"
+        return self._sync_client.files.upload(BytesIO(data), filename=filename).id
+
+    def _build_user_message(self, prompt: str, images: Optional[List[Any]], audio: Optional[List[Any]] = None) -> chat_pb2.Message:
         parts = [text(prompt)]
         for img in (images or []):
             parts.append(xai_image(_image_to_data_url(img)))
+        for src in (audio or []):
+            file_id = self._upload_audio(src)
+            parts.append(xai_file(file_id))
         return user(*parts)
 
-    def _create_chat(self, client: Any, prompt: str, images: Optional[List[Any]]) -> Any:
+    def _create_chat(self, client: Any, prompt: str, images: Optional[List[Any]], audio: Optional[List[Any]] = None) -> Any:
         messages: List[chat_pb2.Message] = []
 
         sys_text = self.instructions or ""
@@ -194,7 +210,7 @@ class XAIAdapter(BaseModel):
             messages.append(system(text(sys_text)))
 
         messages.extend(self._build_history_messages())
-        messages.append(self._build_user_message(prompt, images))
+        messages.append(self._build_user_message(prompt, images, audio))
 
         kwargs: Dict[str, Any] = {
             "model": self.model,
@@ -232,16 +248,16 @@ class XAIAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     def invoke(
-        self, prompt: str, role: str = "user", images: Optional[List[Any]] = None, **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[Any]] = None, audio: Optional[List[Any]] = None, **kwargs
     ) -> ResponseMem:
-        chat = self._create_chat(self._sync_client, prompt, images)
+        chat = self._create_chat(self._sync_client, prompt, images, audio)
         response = chat.sample()
         return self._parse_response(response)
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[Any]] = None, **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[Any]] = None, audio: Optional[List[Any]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
-        chat = self._create_chat(self._async_client, prompt, images)
+        chat = self._create_chat(self._async_client, prompt, images, audio)
 
         accumulated = ""
         tool_calls: List[ToolCall] = []

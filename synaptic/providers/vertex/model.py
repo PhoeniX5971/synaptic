@@ -1,6 +1,9 @@
 import asyncio
+import mimetypes
 import threading
+import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator, List, Optional
 
 from dotenv import load_dotenv
@@ -122,11 +125,28 @@ class VertexAdapter(BaseModel):
 
         return contents
 
-    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
+    def _audio_parts(self, audio: Optional[List[str]]) -> List[Part]:
+        parts = []
+        for src in (audio or []):
+            p = Path(src)
+            if p.exists():
+                data = p.read_bytes()
+                mime, _ = mimetypes.guess_type(src)
+            else:
+                with urllib.request.urlopen(src) as r:
+                    data = r.read()
+                    mime = r.headers.get_content_type()
+            if not mime or not mime.startswith("audio/"):
+                mime = "audio/mpeg"
+            parts.append(Part.from_data(data=data, mime_type=mime))
+        return parts
+
+    def invoke(self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
         role = self.role_map.get(role, "user")
 
         history_contents = self.to_contents()
-        user_message = Content(role=role, parts=[Part.from_text(prompt)])
+        user_parts = [Part.from_text(prompt)] + self._audio_parts(audio)
+        user_message = Content(role=role, parts=user_parts)
 
         messages: List[Content] = history_contents + [user_message]
 
@@ -180,7 +200,7 @@ class VertexAdapter(BaseModel):
         )
 
     async def astream(
-        self, prompt: str, role: str = "user", **kwargs
+        self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Vertex AI.
@@ -191,7 +211,8 @@ class VertexAdapter(BaseModel):
         role = self.role_map.get(role, "user")
 
         history_contents = self.to_contents()
-        user_message = Content(role=role, parts=[Part.from_text(prompt)])
+        user_parts = [Part.from_text(prompt)] + self._audio_parts(audio)
+        user_message = Content(role=role, parts=user_parts)
         messages: List[Content] = history_contents + [user_message]
 
         if self.instructions:

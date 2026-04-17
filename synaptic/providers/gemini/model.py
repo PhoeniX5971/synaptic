@@ -9,7 +9,7 @@ from google.genai import types
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
 from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
-from .helpers import build_image_parts
+from .helpers import build_audio_parts, build_image_parts
 
 load_dotenv()
 
@@ -118,6 +118,7 @@ class GeminiAdapter(BaseModel):
         prompt: str,
         role: str = "user",
         images: Optional[List[str]] = None,
+        audio: Optional[List[str]] = None,
         **kwargs,
     ) -> ResponseMem:
         config = types.GenerateContentConfig(
@@ -157,6 +158,7 @@ class GeminiAdapter(BaseModel):
             prompt_parts.append(types.Part(text=prompt))
 
         prompt_parts.extend(build_image_parts(images))
+        prompt_parts.extend(build_audio_parts(audio))
 
         contents.append(
             types.Content(
@@ -191,7 +193,7 @@ class GeminiAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Gemini.
@@ -206,6 +208,7 @@ class GeminiAdapter(BaseModel):
         if prompt.strip():
             prompt_parts.append(types.Part(text=prompt))
         prompt_parts.extend(build_image_parts(images))
+        prompt_parts.extend(build_audio_parts(audio))
 
         contents = self.to_contents()
         contents.append(types.Content(role=role, parts=prompt_parts))

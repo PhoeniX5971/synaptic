@@ -139,7 +139,7 @@ class DeepSeekAdapter(BaseModel):
 
         return messages
 
-    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
+    def invoke(self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
         messages = self.to_messages()
 
         if role == "user":
@@ -195,7 +195,7 @@ class DeepSeekAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", **kwargs
+        self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from DeepSeek.

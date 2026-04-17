@@ -149,6 +149,7 @@ class ClaudeAdapter(BaseModel):
         self,
         prompt: str,
         role: str = "user",
+        audio: Optional[List[str]] = None,
         **kwargs,
     ) -> ResponseMem:
         role = "assistant" if role == "assistant" else "user"
@@ -176,6 +177,7 @@ class ClaudeAdapter(BaseModel):
         self,
         prompt: str,
         role: str = "user",
+        audio: Optional[List[str]] = None,
         **kwargs,
     ) -> AsyncIterator[ResponseChunk]:
         """

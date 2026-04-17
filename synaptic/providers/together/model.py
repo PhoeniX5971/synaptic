@@ -3,6 +3,7 @@ import base64
 import json
 import mimetypes
 import threading
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -129,16 +130,31 @@ class TogetherAdapter(BaseModel):
             return f"data:{mime};base64,{data}"
         return img
 
-    def _build_content(self, prompt: str, images: Optional[List[str]]) -> Any:
-        """Return plain string content or a multipart content list when images are given."""
-        if not images:
+    def _audio_block(self, src: str) -> Dict:
+        p = Path(src)
+        if p.exists():
+            data = p.read_bytes()
+            mime, _ = mimetypes.guess_type(src)
+            mime = mime or "audio/mpeg"
+        else:
+            with urllib.request.urlopen(src) as r:
+                data = r.read()
+                mime = r.headers.get_content_type() or "audio/mpeg"
+        fmt = mime.split("/")[-1].replace("mpeg", "mp3")
+        return {"type": "input_audio", "input_audio": {"data": base64.b64encode(data).decode(), "format": fmt}}
+
+    def _build_content(self, prompt: str, images: Optional[List[str]], audio: Optional[List[str]] = None) -> Any:
+        """Return plain string content or a multipart content list when images/audio are given."""
+        if not images and not audio:
             return prompt
         parts: List[Dict] = [{"type": "text", "text": prompt}]
-        for img in images:
+        for img in (images or []):
             parts.append({"type": "image_url", "image_url": {"url": self._image_to_url(img)}})
+        for src in (audio or []):
+            parts.append(self._audio_block(src))
         return parts
 
-    def invoke(self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs) -> ResponseMem:
+    def invoke(self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
         role = self.role_map.get(role, "user")
 
         messages: List[Dict] = []
@@ -151,7 +167,7 @@ class TogetherAdapter(BaseModel):
             messages.append({"role": "system", "content": system_message})
 
         messages.extend(self.to_messages())
-        messages.append({"role": role, "content": self._build_content(prompt, images)})
+        messages.append({"role": role, "content": self._build_content(prompt, images, audio)})
 
         request_params: Dict[str, Any] = {
             "model": self.model,
@@ -205,7 +221,7 @@ class TogetherAdapter(BaseModel):
         )
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, **kwargs
+        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Together AI.
@@ -223,7 +239,7 @@ class TogetherAdapter(BaseModel):
             messages.append({"role": "system", "content": system_message})
 
         messages.extend(self.to_messages())
-        messages.append({"role": role, "content": self._build_content(prompt, images)})
+        messages.append({"role": role, "content": self._build_content(prompt, images, audio)})
 
         request_params: Dict[str, Any] = {
             "model": self.model,

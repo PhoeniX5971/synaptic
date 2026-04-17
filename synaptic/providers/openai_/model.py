@@ -1,7 +1,11 @@
 import asyncio
+import base64
 import json
+import mimetypes
 import threading
+import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import OpenAI
@@ -125,11 +129,32 @@ class OpenAIAdapter(BaseModel):
 
         return contents
 
-    def invoke(self, prompt: str, role: str = "user", **kwargs) -> ResponseMem:
+    def _audio_content_blocks(self, audio: Optional[List[str]]) -> List[Dict]:
+        blocks = []
+        for src in (audio or []):
+            p = Path(src)
+            if p.exists():
+                data = p.read_bytes()
+                mime, _ = mimetypes.guess_type(src)
+                mime = mime or "audio/mpeg"
+            else:
+                with urllib.request.urlopen(src) as r:
+                    data = r.read()
+                    mime = r.headers.get_content_type() or "audio/mpeg"
+            fmt = mime.split("/")[-1].replace("mpeg", "mp3")
+            blocks.append({"type": "input_audio", "input_audio": {"data": base64.b64encode(data).decode(), "format": fmt}})
+        return blocks
+
+    def invoke(self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
         """Invoke OpenAI model with modern API using to_contents style"""
         role = self.role_map.get(role, "user")
 
-        messages = self.to_contents() + [{"role": role, "content": prompt}]
+        audio_blocks = self._audio_content_blocks(audio)
+        if audio_blocks:
+            content = [{"type": "text", "text": prompt}] + audio_blocks
+        else:
+            content = prompt
+        messages = self.to_contents() + [{"role": role, "content": content}]
 
         request_params = {
             "model": self.model,
@@ -185,7 +210,7 @@ class OpenAIAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", **kwargs
+        self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from OpenAI.
@@ -196,7 +221,12 @@ class OpenAIAdapter(BaseModel):
         """
         role = self.role_map.get(role, "user")
 
-        messages = self.to_contents() + [{"role": role, "content": prompt}]
+        audio_blocks = self._audio_content_blocks(audio)
+        if audio_blocks:
+            content = [{"type": "text", "text": prompt}] + audio_blocks
+        else:
+            content = prompt
+        messages = self.to_contents() + [{"role": role, "content": content}]
 
         request_params: Dict[str, Any] = {
             "model": self.model,
