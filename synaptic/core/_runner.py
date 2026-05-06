@@ -80,10 +80,20 @@ async def ainvoke(model, prompt: Optional[str], role: str = "user", images=None,
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
     created = datetime.now().astimezone(timezone.utc)
-    memory = model.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
-
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
+
+    # Drive the native async stream to completion and collect the full response.
+    # This gives true async execution without blocking the event loop.
+    accumulated = ""
+    tool_calls: List[ToolCall] = []
+    async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs):
+        if not chunk.is_final and chunk.text:
+            accumulated += chunk.text
+        if chunk.function_call:
+            tool_calls.append(chunk.function_call)
+
+    memory = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
 
     if _autorun and memory.tool_calls:
         memory.tool_results = await run_tools_async(model.llm.synaptic_tools, model.blacklist, memory.tool_calls)
