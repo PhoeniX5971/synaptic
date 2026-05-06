@@ -1,9 +1,5 @@
 import asyncio
-import mimetypes
 import threading
-import urllib.request
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, AsyncIterator, List, Optional
 
 from dotenv import load_dotenv
@@ -11,15 +7,15 @@ from vertexai import init as vertex_init
 from vertexai.generative_models import (
     Content,
     FunctionDeclaration,
-    GenerationConfig,
     GenerativeModel,
     Part,
     Tool,
 )
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, ToolCall, register_callback
+from ...core.tool import ToolCall, ToolRegistry, collect_tools, register_callback
 from ...core.tool import Tool as ST
+from .helpers import audio_parts, generation_config, history_contents, response_mem
 
 load_dotenv()
 
@@ -37,6 +33,7 @@ class VertexAdapter(BaseModel):
         api_key: str | None = None,
         temperature: float = 0.8,
         instructions: str = "",
+        tool_registry: Optional[ToolRegistry] = None,
     ):
         vertex_init(project=project, location=location)
 
@@ -49,6 +46,7 @@ class VertexAdapter(BaseModel):
         self.instructions = instructions
         self.response_format = response_format
         self.response_schema = response_schema
+        self.tool_registry = tool_registry
 
         self.role_map = {
             "user": "user",
@@ -64,14 +62,8 @@ class VertexAdapter(BaseModel):
 
     def _convert_tools(self):
         """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
-        all_tools = {}
+        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
         all_declarations: List[FunctionDeclaration] = []
-
-        for t in self.synaptic_tools:
-            all_tools[t.name] = t
-        for name, t in TOOL_REGISTRY.items():
-            if name not in all_tools:
-                all_tools[name] = t
 
         for _, tool in all_tools.items():
             decl = tool.declaration
@@ -93,114 +85,31 @@ class VertexAdapter(BaseModel):
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> List[Content]:
-        contents = []
+        return history_contents(self.history, self.role_map)
 
-        if self.history is None:
-            return contents
-
-        for mem in self.history.MemoryList:
-            if isinstance(mem, ResponseMem) and mem.tool_calls:
-                # Model turn: text + function calls are implicit; Vertex only needs the text
-                model_parts = [Part.from_text(mem.message)] if mem.message else [Part.from_text("")]
-                contents.append(Content(role="model", parts=model_parts))
-
-                # User turn: one FunctionResponse per call, linked by name
-                tool_results = getattr(mem, "tool_results", None) or []
-                if tool_results:
-                    response_parts = []
-                    for tc, result in zip(mem.tool_calls, tool_results):
-                        resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
-                        response_parts.append(
-                            Part.from_function_response(
-                                name=tc.name,
-                                response={"result": resp},
-                            )
-                        )
-                    contents.append(Content(role="user", parts=response_parts))
-            else:
-                parts = [Part.from_text(mem.message)]
-                contents.append(
-                    Content(role=self.role_map.get(mem.role, "user"), parts=parts)
-                )
-
-        return contents
-
-    def _audio_parts(self, audio: Optional[List[str]]) -> List[Part]:
-        parts = []
-        for src in (audio or []):
-            p = Path(src)
-            if p.exists():
-                data = p.read_bytes()
-                mime, _ = mimetypes.guess_type(src)
-            else:
-                with urllib.request.urlopen(src) as r:
-                    data = r.read()
-                    mime = r.headers.get_content_type()
-            if not mime or not mime.startswith("audio/"):
-                mime = "audio/mpeg"
-            parts.append(Part.from_data(data=data, mime_type=mime))
-        return parts
-
-    def invoke(self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
+    def _messages(self, prompt: Optional[str], role: str, audio: Optional[List[str]]) -> List[Content]:
         role = self.role_map.get(role, "user")
-
-        history_contents = self.to_contents()
-        user_parts = [Part.from_text(prompt)] + self._audio_parts(audio)
-        user_message = Content(role=role, parts=user_parts)
-
-        messages: List[Content] = history_contents + [user_message]
-
+        messages: List[Content] = self.to_contents()
+        if prompt is not None or audio:
+            parts = [Part.from_text(prompt or "")] + audio_parts(audio)
+            messages.append(Content(role=role, parts=parts))
         if self.instructions:
             system_msg = Content(role="user", parts=[Part.from_text(self.instructions)])
             messages = [system_msg] + messages
+        return messages
 
-        if self.response_format == ResponseFormat.NONE:
-            response_mime = "text/plain"
-        elif self.response_format == ResponseFormat.JSON:
-            response_mime = "application/json"
-        else:
-            response_mime = "text/plain"
-
-        config = GenerationConfig(
-            temperature=self.temperature,
-            response_mime_type=response_mime,
-        )
-
+    def invoke(self, prompt: Optional[str], role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
+        messages = self._messages(prompt, role, audio)
         response = self.model.generate_content(
             messages,
-            generation_config=config,
+            generation_config=generation_config(self.response_format, self.temperature),
             tools=self.vertex_tools,
         )
-
-        created = datetime.now().astimezone(timezone.utc)
-        message = ""
-        tool_calls: List[ToolCall] = []
-
-        if response.candidates:
-            cand = response.candidates[0]
-
-            if cand.function_calls:
-                for fc in cand.function_calls:
-                    tool_calls.append(
-                        ToolCall(
-                            name=fc.name,
-                            args=dict(fc.args) or {},
-                        )
-                    )
-
-            if cand.content and cand.content.parts:
-                for p in cand.content.parts:
-                    if p.text:
-                        message += p.text
-
-        return ResponseMem(
-            message=message,
-            created=created,
-            tool_calls=tool_calls,
-        )
+        return response_mem(response)
 
     async def astream(
-        self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs
+        self, prompt: Optional[str], role: str = "user", audio: Optional[List[str]] = None,
+        abort=None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
         """
         Asynchronously stream response chunks from Vertex AI.
@@ -208,29 +117,8 @@ class VertexAdapter(BaseModel):
         Runs generate_content_stream synchronously in a background thread and
         pushes responses into an asyncio.Queue.
         """
-        role = self.role_map.get(role, "user")
-
-        history_contents = self.to_contents()
-        user_parts = [Part.from_text(prompt)] + self._audio_parts(audio)
-        user_message = Content(role=role, parts=user_parts)
-        messages: List[Content] = history_contents + [user_message]
-
-        if self.instructions:
-            system_msg = Content(role="user", parts=[Part.from_text(self.instructions)])
-            messages = [system_msg] + messages
-
-        if self.response_format == ResponseFormat.NONE:
-            response_mime = "text/plain"
-        elif self.response_format == ResponseFormat.JSON:
-            response_mime = "application/json"
-        else:
-            response_mime = "text/plain"
-
-        config = GenerationConfig(
-            temperature=self.temperature,
-            response_mime_type=response_mime,
-        )
-
+        messages = self._messages(prompt, role, audio)
+        config = generation_config(self.response_format, self.temperature)
         loop = asyncio.get_running_loop()
         q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
 
@@ -241,6 +129,8 @@ class VertexAdapter(BaseModel):
                     generation_config=config,
                     tools=self.vertex_tools,
                 ):
+                    if abort and abort.is_set():
+                        break
                     loop.call_soon_threadsafe(q.put_nowait, response)
             except Exception as e:
                 loop.call_soon_threadsafe(q.put_nowait, e)
@@ -250,10 +140,11 @@ class VertexAdapter(BaseModel):
         threading.Thread(target=producer, daemon=True).start()
 
         accumulated_message = ""
-        tool_calls: List[ToolCall] = []
 
         while True:
             item = await q.get()
+            if abort and abort.is_set():
+                return
             if isinstance(item, Exception):
                 raise item
             if item is None:

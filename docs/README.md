@@ -1,13 +1,21 @@
-# Synaptic — Documentation
+# Synaptic Docs
 
-This docs folder contains API references, usage examples, and provider guides
-for the **Synaptic** framework — a lightweight provider-agnostic toolkit for
-building LLM-driven workflows with first-class support for **tools** and
-**memory**.
+This folder is the practical guide to Synaptic. Read in this order if you are
+new to the framework:
 
-### Contents
+1. [`quickstart.md`](quickstart.md)
+2. [`Overview.md`](Overview.md)
+3. [`core/model.md`](core/model.md)
+4. [`core/tool.md`](core/tool.md)
+5. [`core/agent.md`](core/agent.md)
+6. [`core/memory.md`](core/memory.md)
+7. [`core/streaming-events.md`](core/streaming-events.md)
+8. [`core/flows.md`](core/flows.md)
+9. [`providers/index.md`](providers/index.md)
 
-- [`overview.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/Overview.md) — high-level overview and quick links
-- [`core/`](https://github.com/PhoeniX5971/synaptic/tree/main/docs/core) — core modules (Memory, Model, Tool)
-- [`providers/`](https://github.com/PhoeniX5971/synaptic/tree/main/docs/providers) — provider adapters (Gemini, OpenAI)
-- [`examples/`](https://github.com/PhoeniX5971/synaptic/tree/main/docs/examples) — runnable examples and workflows
+Provider-specific notes:
+
+- [`providers/openai.md`](providers/openai.md)
+- [`providers/gemini.md`](providers/gemini.md)
+
+Runnable examples live in [`examples/`](examples/).

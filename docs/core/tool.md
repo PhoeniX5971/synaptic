@@ -1,63 +1,88 @@
-# Core — Tool
+# Core: Tools
 
-**File:** `core/tool.py`
+Tools are Python callables exposed to model providers through function calling.
 
-`Tool` encapsulates a callable that the LLM can request via function-calling. The
-tool includes a JSON-schema-like declaration used by providers.
+## `autotool`
 
----
+Use `autotool` for most tools:
 
-## Class: `Tool`
+```python
+from synaptic import autotool
 
-**Type:** class
+@autotool(
+    description="Search an inventory",
+    param_descriptions={"sku": "Product SKU"},
+)
+def find_product(sku: str) -> dict:
+    return {"sku": sku, "stock": 12}
+```
 
-**Constructor**
+Synaptic infers simple parameter types from annotations:
 
-```py
-Tool(
-    name: str,
-    declaration: dict,
-    function: Callable[..., Any] = lambda: None,
-    default_params: dict | None = None
+- `str` -> `string`
+- `int` -> `integer`
+- `float` -> `number`
+- `bool` -> `boolean`
+
+Parameters without defaults are required.
+
+## `Tool`
+
+Use `Tool` directly when you need a custom declaration:
+
+```python
+from synaptic import Tool
+
+tool = Tool(
+    name="add",
+    declaration={
+        "name": "add",
+        "description": "Add numbers",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "a": {"type": "integer"},
+                "b": {"type": "integer"},
+            },
+            "required": ["a", "b"],
+        },
+    },
+    function=lambda a, b: a + b,
 )
 ```
 
-**Fields**
+`Tool.run(**kwargs)` merges `default_params` before runtime args.
 
-- `name: str` — unique tool identifier.
-- `declaration: dict` — schema used to convert into provider function definitions.
-- `function: Callable` — the callable executed when the tool is run.
-- `default_params: dict` — default args merged with runtime args.
+## Async Tools
 
-**Methods**
+Async functions are supported by `ainvoke`, `astream`, and `Agent.arun`.
+Calling an async tool through sync `invoke` raises a runtime error.
 
-- `run(**kwargs) -> Any`
-  - Merges `default_params` with incoming `kwargs` and calls the underlying `function`.
-  - Equivalent to `function(**{**default_params, **kwargs})`.
+## ToolRegistry
 
-**Error handling**
+`ToolRegistry` isolates tool scope.
 
-- The constructor validates `function` is callable and raises `ValueError` otherwise.
-- `_run_tools` in `Model` will catch exceptions during execution and return error objects per-call.
+```python
+from synaptic import ToolRegistry
 
----
+registry = ToolRegistry()
 
-## Example
+@registry.autotool("Get the current tenant id")
+def tenant_id() -> str:
+    return "tenant_a"
 
-```py
-def greet(name: str) -> str:
-    return f"Hello, {name}!"
-
-greet_decl = {
-    "name": "greet",
-    "description": "Greet a person",
-    "parameters": {
-        "type": "object",
-        "properties": {"name": {"type": "string"}},
-        "required": ["name"]
-    }
-}
-
-greet_tool = Tool("greet", greet_decl, greet, default_params={"name": "User"})
-print(greet_tool.run(name="Phoenix"))  # -> "Hello, Phoenix!"
+model = Model(..., tool_registry=registry)
 ```
+
+Explicit model tools override registry tools with the same name.
+
+## Tool Results
+
+Tool execution returns dictionaries:
+
+```python
+{"name": "add", "result": 5}
+{"name": "add", "error": "Permission denied"}
+```
+
+These are stored on `ResponseMem.tool_results`.

@@ -1,57 +1,62 @@
-# Provider — Gemini Adapter
+# Provider: Gemini
 
-**File:** `providers/gemini/model.py`
+Use Gemini through `Model(provider=Provider.GEMINI, ...)`.
 
-Adapter that wraps Google GenAI (Gemini) SDK and converts internal `Memory`
-objects and `Tool` declarations into Gemini `types.Content` and `types.Tool`
-objects.
+```python
+from synaptic import Model, Provider
 
----
+model = Model(
+    provider=Provider.GEMINI,
+    model="gemini-2.5-flash",
+    api_key="...",
+)
 
-## Class: `GeminiAdapter`
-
-**Type:** class — implements `BaseModel` interface
-
-**Constructor**
-
-```py
-GeminiAdapter(model: str, history: History, temperature: float = 0.8, tools: list | None = None)
-```
-
-**Behavior**
-
-- Converts registered `Tool` objects to Gemini `types.Tool` via `_convert_tools`.
-- Serializes `History.MemoryList` into Gemini `types.Content` objects in `to_contents`.
-  - Each memory `parts` includes the `message` and a "(Created at: ...)" part.
-  - For `ResponseMem`, `tool_calls` and `tool_results` are appended as parts.
-- When `invoke(prompt)` is called:
-  - Builds `contents = self.to_contents()` and appends the incoming prompt as user content.
-  - Calls `self.client.models.generate_content(model=..., contents=..., config=...)`.
-  - Parses `response.candidates[0]` to build `message` and `tool_calls` (from `part.function_call`).
-  - Returns `ResponseMem(message=..., created=..., tool_calls=...)`.
-
-**Notes / Environment**
-
-- The implementation expects `google.genai` to be installed and environment credentials to be configured as required by the Google GenAI SDK.
-
-- Add `.env` usage or authentication docs as needed for deployment.
-
----
-
-## Example
-
-```py
-from synaptic.providers.gemini.model import GeminiAdapter
-from synaptic.core.base.memory import History
-
-history = History()
-adapter = GeminiAdapter(model="gemini-2.5-pro", history=history)
-res = adapter.invoke("Hello Gemini!")
+res = model.invoke("Hello")
 print(res.message)
-print(res.tool_calls)
 ```
 
-**Important**
+## Tools
 
-- Provider SDKs may change APIs — verify compatibility with your `google.genai` version.
-- Network errors and API errors should be handled by your outer workflow.
+Gemini tools are converted to `google.genai.types.Tool` objects.
+
+```python
+model = Model(
+    provider=Provider.GEMINI,
+    model="gemini-2.5-flash",
+    api_key="...",
+    tools=[tool],
+)
+```
+
+## Images And Audio
+
+`invoke`, `ainvoke`, and `astream` accept `images=` and `audio=` lists when the
+provider adapter supports those inputs.
+
+```python
+res = model.invoke(
+    "Describe this image",
+    images=["./diagram.png"],
+)
+```
+
+Local files are loaded as inline provider parts. URLs are downloaded and sent as
+inline data.
+
+## Structured JSON
+
+```python
+model = Model(
+    provider=Provider.GEMINI,
+    model="gemini-2.5-flash",
+    api_key="...",
+    response_format=ResponseFormat.JSON,
+    response_schema=MySchema,
+)
+```
+
+Structured output disables Gemini tool declarations for that request.
+
+## Streaming
+
+Gemini streaming uses `client.aio.models.generate_content_stream`.

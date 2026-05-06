@@ -1,8 +1,9 @@
 from .core.base.base_model import BaseModel, ResponseFormat, ResponseChunk
-from .core.base.memory import Memory, ResponseMem, UserMem, History
+from .agent import Agent, EventBus, Session
+from .core.base.memory import Memory, ResponseMem, UserMem, History, complete_tool_call
 
 from .core.model import Model
-from .core.tool import Tool, autotool
+from .core.tool import Tool, ToolCall, ToolRegistry, autotool
 from .core.provider import Provider
 
 from .providers import (
@@ -13,4 +14,5 @@ from .providers import (
     VertexAdapter,
     TogetherAdapter,
     UniversalLLMAdapter,
+    XAIAdapter,
 )

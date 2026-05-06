@@ -1,23 +1,48 @@
 # Overview
 
-Synaptic is a minimal framework for orchestrating LLMs and developer-defined
-tools with a small, testable core.
+Synaptic turns provider SDKs into one simple application API.
 
-## Key Concepts
+## Architecture
 
-- **Memory** — typed objects representing turns / model responses.
-- **History** — sliding-window of `Memory` objects used to build prompt context.
-- **Tool** — a callable function made available to the model via provider function-calling.
-- **Model** — provider-agnostic wrapper that dispatches to provider adapters (Gemini/OpenAI).
+`Model` is the lowest user-facing layer. It wraps a provider adapter and knows
+how to invoke, stream, bind tools, and write memory.
 
-## Quick links
+`Agent` sits above `Model`. It runs a multi-turn loop: model call, tool calls,
+tool results, continuation call, final answer.
 
-- Core:
-  - [`docs/core/memory.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/core/memory.md)
-  - [`docs/core/model.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/core/model.md)
-  - [`docs/core/tool.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/core/tool.md)
-- Providers:
-  - [`docs/providers/gemini.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/providers/gemini.md)
-  - [`docs/providers/openai.md`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/providers/openai.md)
-- Examples:
-  - [`docs/examples`](https://github.com/PhoeniX5971/synaptic/blob/main/docs/examples)
+`History` stores conversation entries. Provider adapters serialize it into the
+format each SDK expects.
+
+`Tool` and `ToolRegistry` define callable work the model may request. A tool can
+be bound directly to a model or scoped through a registry.
+
+`EventBus` broadcasts agent events such as streamed text and tool start/end.
+
+`Flow` and `Pipeline` are small workflow helpers for deterministic app logic
+outside the model loop.
+
+## Public Imports
+
+```python
+from synaptic import (
+    Agent,
+    EventBus,
+    History,
+    Model,
+    Provider,
+    Session,
+    Tool,
+    ToolRegistry,
+    autotool,
+)
+```
+
+## When To Use What
+
+- Use `Model.invoke()` for one request.
+- Use `Model.astream()` for streaming text.
+- Use `Model(autorun=True)` for one-turn tool execution.
+- Use `Agent.run()` / `Agent.arun()` for multi-turn tool workflows.
+- Use `ToolRegistry` to isolate tools between sessions or tests.
+- Use `History(size=N)` to control context size.
+- Use `Flow` or `Pipeline` for predictable non-agent workflows.

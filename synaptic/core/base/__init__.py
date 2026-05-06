@@ -1,2 +1,2 @@
 from .base_model import BaseModel, ResponseFormat, ResponseChunk
-from .memory import Memory, ResponseMem, UserMem, History
+from .memory import Memory, ResponseMem, UserMem, History, complete_tool_call

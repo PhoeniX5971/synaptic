@@ -1,5 +1,3 @@
-import asyncio
-import threading
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, List, Optional
 
@@ -8,8 +6,8 @@ from dotenv import load_dotenv
 from google.genai import types
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
-from .helpers import build_audio_parts, build_image_parts
+from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
+from .helpers import build_audio_parts, build_image_parts, history_contents
 
 load_dotenv()
 
@@ -25,7 +23,7 @@ class GeminiAdapter(BaseModel):
         tools: Optional[List[Tool]],
         temperature: float = 0.8,
         instructions: str = "",
-        stream: bool = False,
+        tool_registry: Optional[ToolRegistry] = None,
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
@@ -35,11 +33,10 @@ class GeminiAdapter(BaseModel):
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
+        self.tool_registry = tool_registry
         register_callback(self._invalidate_tools)
         self._invalidate_tools()
         self.instructions = instructions
-        # keep this flag for backwards compatibility / config, but streaming will be done via astream()
-        self.stream = stream
         self.role_map = {
             "user": "user",
             "assistant": "model",
@@ -55,12 +52,7 @@ class GeminiAdapter(BaseModel):
         self.gemini_tools = []
 
         # Use a dict to deduplicate by name
-        all_tools = {}
-        for t in self.synaptic_tools or []:
-            all_tools[t.name] = t
-        for t_name, t in TOOL_REGISTRY.items():
-            if t_name not in all_tools:
-                all_tools[t_name] = t
+        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
 
         for t_name, t in all_tools.items():
             self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))  # type: ignore
@@ -68,54 +60,11 @@ class GeminiAdapter(BaseModel):
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> list[types.Content]:
-        """Convert all memories to Gemini Content objects."""
-        contents = []
-
-        if self.history is None:
-            return contents
-
-        for memory in self.history.MemoryList:
-            if isinstance(memory, ResponseMem) and memory.tool_calls:
-                # Model turn: text + one FunctionCall part per tool call
-                parts: list[types.Part] = []
-                if memory.message:
-                    parts.append(types.Part(text=memory.message))
-                for tc in memory.tool_calls:
-                    parts.append(
-                        types.Part(
-                            function_call=types.FunctionCall(name=tc.name, args=tc.args)
-                        )
-                    )
-                contents.append(types.Content(role="model", parts=parts))
-
-                # User turn: one FunctionResponse per call, linked by name
-                tool_results = getattr(memory, "tool_results", None) or []
-                if tool_results:
-                    response_parts: list[types.Part] = []
-                    for tc, result in zip(memory.tool_calls, tool_results):
-                        resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
-                        response_parts.append(
-                            types.Part(
-                                function_response=types.FunctionResponse(
-                                    name=tc.name,
-                                    response={"result": resp},
-                                )
-                            )
-                        )
-                    contents.append(types.Content(role="user", parts=response_parts))
-            else:
-                parts = [types.Part(text=memory.message)]
-                contents.append(
-                    types.Content(
-                        role=self.role_map.get(memory.role, "user"), parts=parts
-                    )
-                )
-
-        return contents
+        return history_contents(self.history, self.role_map)
 
     def invoke(
         self,
-        prompt: str,
+        prompt: Optional[str],
         role: str = "user",
         images: Optional[List[str]] = None,
         audio: Optional[List[str]] = None,
@@ -154,18 +103,14 @@ class GeminiAdapter(BaseModel):
         # 3. Current prompt LAST (text + optional images)
         prompt_parts: list[types.Part] = []
 
-        if prompt.strip():
+        if prompt and prompt.strip():
             prompt_parts.append(types.Part(text=prompt))
 
         prompt_parts.extend(build_image_parts(images))
         prompt_parts.extend(build_audio_parts(audio))
 
-        contents.append(
-            types.Content(
-                role=self.role_map.get(role, "user"),
-                parts=prompt_parts,
-            )
-        )
+        if prompt_parts:
+            contents.append(types.Content(role=self.role_map.get(role, "user"), parts=prompt_parts))
 
         response = self.client.models.generate_content(
             model=self.model, contents=contents, config=config, **kwargs
@@ -193,31 +138,22 @@ class GeminiAdapter(BaseModel):
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs
+        self, prompt: Optional[str], role: str = "user", images: Optional[List[str]] = None,
+        audio: Optional[List[str]] = None, abort=None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
-        """
-        Asynchronously stream response chunks from Gemini.
-
-        Runs generate_content_stream synchronously in a background thread,
-        pushes responses into an asyncio.Queue so the caller can async-for chunks.
-        Yields ResponseChunk objects with partial text and function_call events.
-        """
         role = self.role_map.get(role, "user")
 
         prompt_parts: list[types.Part] = []
-        if prompt.strip():
+        if prompt and prompt.strip():
             prompt_parts.append(types.Part(text=prompt))
         prompt_parts.extend(build_image_parts(images))
         prompt_parts.extend(build_audio_parts(audio))
 
         contents = self.to_contents()
-        contents.append(types.Content(role=role, parts=prompt_parts))
+        if prompt_parts:
+            contents.append(types.Content(role=role, parts=prompt_parts))
 
-        config = types.GenerateContentConfig(
-            temperature=self.temperature,
-            tools=self.gemini_tools,
-        )
-
+        config = types.GenerateContentConfig(temperature=self.temperature, tools=self.gemini_tools)
         if self.response_format == ResponseFormat.NONE:
             config.response_mime_type = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
@@ -227,59 +163,33 @@ class GeminiAdapter(BaseModel):
             config.tools = None
 
         if self.instructions:
-            instructions_content = [
-                types.Content(
-                    role=self.role_map.get("system", "user"),
-                    parts=[types.Part(text=self.instructions)],
-                )
-            ]
-            contents = instructions_content + contents
-
-        loop = asyncio.get_running_loop()
-        q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
-
-        def producer():
-            try:
-                for response in self.client.models.generate_content_stream(
-                    model=self.model, contents=contents, config=config, **kwargs  # type: ignore
-                ):
-                    loop.call_soon_threadsafe(q.put_nowait, response)
-            except Exception as e:
-                loop.call_soon_threadsafe(q.put_nowait, e)
-            finally:
-                loop.call_soon_threadsafe(q.put_nowait, None)
-
-        threading.Thread(target=producer, daemon=True).start()
+            contents = [types.Content(
+                role=self.role_map.get("system", "user"),
+                parts=[types.Part(text=self.instructions)],
+            )] + contents
 
         accumulated_message = ""
         tool_calls: List[ToolCall] = []
 
-        while True:
-            item = await q.get()
-            if isinstance(item, Exception):
-                raise item
-            if item is None:
-                break
-
-            response = item
+        async for response in self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
+            model=self.model, contents=contents, config=config, **kwargs  # type: ignore[arg-type]
+        ):
+            if abort and abort.is_set():
+                return
             if not getattr(response, "candidates", None):
                 continue
-
             candidate = response.candidates[0]
-
-            if candidate.content and candidate.content.parts:
-                for part in candidate.content.parts:
-                    if getattr(part, "text", None):
-                        piece = part.text
-                        accumulated_message += piece
-                        yield ResponseChunk(
-                            text=piece, is_final=False, function_call=None
-                        )
-
-                    if getattr(part, "function_call", None):
-                        fc = part.function_call
-                        tfc = ToolCall(name=fc.name, args=fc.args or {})  # type: ignore
-                        tool_calls.append(tfc)
-                        yield ResponseChunk(text="", is_final=False, function_call=tfc)
+            if not candidate or not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                text = getattr(part, "text", None)
+                if text:
+                    accumulated_message += text
+                    yield ResponseChunk(text=text, is_final=False, function_call=None)
+                fc = getattr(part, "function_call", None)
+                if fc:
+                    tfc = ToolCall(name=fc.name, args=fc.args or {})  # type: ignore[union-attr]
+                    tool_calls.append(tfc)
+                    yield ResponseChunk(text="", is_final=False, function_call=tfc)
 
         yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)

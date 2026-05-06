@@ -5,6 +5,8 @@ from typing import List, Optional
 
 from google.genai import types
 
+from ...core.base import ResponseMem
+
 
 # -----------------------------
 # MIME Detection
@@ -56,3 +58,34 @@ def build_audio_parts(audio: Optional[List[str]]) -> List[types.Part]:
     if not audio:
         return []
     return [audio_to_part(src) for src in audio]
+
+
+def history_contents(history, role_map) -> list[types.Content]:
+    contents = []
+    if history is None:
+        return contents
+    for memory in history.MemoryList:
+        if isinstance(memory, ResponseMem) and memory.tool_calls:
+            parts: list[types.Part] = []
+            if memory.message:
+                parts.append(types.Part(text=memory.message))
+            for call in memory.tool_calls:
+                parts.append(types.Part(
+                    function_call=types.FunctionCall(name=call.name, args=call.args)
+                ))
+            contents.append(types.Content(role="model", parts=parts))
+            results = getattr(memory, "tool_results", None) or []
+            response_parts: list[types.Part] = []
+            for call, result in zip(memory.tool_calls, results):
+                resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
+                response_parts.append(types.Part(
+                    function_response=types.FunctionResponse(name=call.name, response={"result": resp})
+                ))
+            if response_parts:
+                contents.append(types.Content(role="user", parts=response_parts))
+        else:
+            contents.append(types.Content(
+                role=role_map.get(memory.role, "user"),
+                parts=[types.Part(text=memory.message)],
+            ))
+    return contents

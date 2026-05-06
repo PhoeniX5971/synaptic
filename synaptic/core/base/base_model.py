@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Optional
+import enum
 
 from .memory import ResponseMem
-import enum
 
 
 class ResponseFormat(enum.StrEnum):
@@ -13,14 +13,17 @@ class ResponseFormat(enum.StrEnum):
 
 @dataclass
 class ResponseChunk:
-    """Simple chunk emitted by async stream."""
+    """Chunk emitted by async stream."""
 
     text: str
     is_final: bool = False
     function_call: Optional[Any] = None
+    finish_reason: Optional[str] = None   # "stop" | "tool_calls" | "max_tokens"
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class BaseModel(ABC):
     @abstractmethod
-    def invoke(self, prompt: str, **kwargs) -> ResponseMem:
+    def invoke(self, prompt: Optional[str], **kwargs) -> ResponseMem:
         pass
