@@ -140,6 +140,7 @@ class VertexAdapter(BaseModel):
         threading.Thread(target=producer, daemon=True).start()
 
         accumulated_message = ""
+        tool_calls: List[ToolCall] = []
 
         while True:
             item = await q.get()

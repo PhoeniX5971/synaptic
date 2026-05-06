@@ -13,11 +13,11 @@ Permission = Callable[[str, dict], bool]
 
 
 class Agent:
-    """Multi-turn tool-running layer built on top of `Model`.
+    """Multi-turn agentic loop built on top of `Model`.
 
-    `Agent` keeps calling the model until it returns no tool calls or reaches
-    `max_turns`. Tool results are written back to the same response memory, then
-    the next provider call uses `prompt=None` so no synthetic user turn is added.
+    Loops until the model returns no tool calls or `max_turns` is hit.
+    Every streaming turn yields chunks character-by-character; tool results
+    are written back into history and the next turn continues with prompt=None.
     """
 
     def __init__(
@@ -131,18 +131,51 @@ class Agent:
         finally:
             self._finish()
 
-    async def astream(self, prompt: Optional[str], role: str = "user", **kwargs) -> AsyncIterator[ResponseChunk]:
-        """Stream one model turn through the event bus.
+    async def astream(
+        self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
+    ) -> AsyncIterator[ResponseChunk]:
+        """Full multi-turn streaming loop.
 
-        Streaming emits `text_delta` events and delegates tool execution to
-        `Model.astream(..., autorun=True)`. Use `arun` when you need full
-        multi-turn continuation after tool results.
+        Each turn streams text character-by-character. After a turn ends:
+        - tool calls are executed (with permission checks + events)
+        - results are written into history
+        - the next turn begins immediately with prompt=None
+        Loops until no tool calls remain or max_turns is hit.
         """
         self._start()
         try:
-            async for chunk in self.model.astream(prompt, role=role, autorun=True, automem=True, **kwargs):
-                if chunk.text:
-                    await self.events.aemit("text_delta", chunk.text)
-                yield chunk
+            next_prompt = prompt
+            self._add_user(prompt, role)
+            for _ in range(self.max_turns):
+                accumulated = ""
+                tool_calls: List[ToolCall] = []
+                created = datetime.now().astimezone(timezone.utc)
+
+                async for chunk in self.model.llm.astream(
+                    prompt=next_prompt, role=role, abort=abort, **kwargs
+                ):
+                    if abort and abort.is_set():
+                        return
+                    # Accumulate non-final text deltas; skip the final summary chunk
+                    if not chunk.is_final and chunk.text:
+                        accumulated += chunk.text
+                        await self.events.aemit("text_delta", chunk.text)
+                    if chunk.function_call:
+                        tool_calls.append(chunk.function_call)
+                    yield chunk
+
+                mem = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
+                self.session.history.add(mem)
+                await self.events.aemit("step_end", mem)
+
+                if not tool_calls:
+                    return
+
+                results = await self._atool_results(tool_calls)
+                complete_tool_call(mem, results, self.session.history)
+                next_prompt = None
+                role = "user"
+
+            raise RuntimeError("Agent reached max_turns")
         finally:
             self._finish()
