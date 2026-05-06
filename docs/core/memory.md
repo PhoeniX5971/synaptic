@@ -1,118 +1,82 @@
-# Core — Memory
+# Core: Memory
 
-**File:** `core/base/memory.py`
+Memory stores conversation state in provider-neutral Python objects.
 
-The memory module provides simple typed objects used to capture conversation
-entries and model responses, and a `History` container for sliding-window
-memory management.
+## Memory Types
 
----
+`Memory` is the base class:
 
-## Classes
-
-### `Memory`
-
-**Type:** class  
-A base memory object representing an entry in conversation history.
-
-**Constructor**
-
-```py
-Memory(message: str, created, role: str)
+```python
+Memory(message="hello", created=created, role="user")
 ```
 
-**Fields**
+`UserMem` defaults to role `user`:
 
-- `message: str` — The textual content of the memory.
-- `created` — Timestamp (arbitrary type, typically `datetime`).
-- `role: str` — Role name (e.g. `"user"`, `"assistant"`, `"system"`).
-
-**repr**
-
-```py
-<Memory role={role} message={message!r} created={created}>
+```python
+UserMem("hello", created=created)
 ```
 
----
+`ResponseMem` represents assistant output:
 
-### `ResponseMem`
-
-**Type:** class — extends `Memory`  
-Represents a model response. Stores tool-call metadata.
-
-**Constructor**
-
-```py
-ResponseMem(message: str, created, tool_calls, tool_results: list = [], role: str = "assistant")
+```python
+ResponseMem(
+    message="answer",
+    created=created,
+    tool_calls=[],
+    tool_results=[],
+)
 ```
 
-**Fields**
+## History
 
-- `tool_calls: list[ToolCall]` — Parsed function calls returned by adapter.
-- `tool_results: list` — Results populated after tool execution (list of dicts `{name, result}`).
-- Inherits all `Memory` fields.
+`History` is an ordered sliding window:
 
-**Methods**
+```python
+from synaptic import History
 
-- `list_tool_calls()` — returns a list of names of invoked tools.
-- `get_tool_call(name: str) -> ToolCall` — returns the first tool call matching `name`.
-
-**repr**
-
-```py
-<Memory role={role} message={message!r} created={created} tool_calls={tool_calls} tool_results={tool_results}>
+history = History(size=10)
+history.add(UserMem("hello", created=created))
 ```
 
----
+When more than `size` entries exist, old entries are dropped.
 
-### `UserMem`
+## Truncation
 
-**Type:** class — extends `Memory`  
-Thin subclass for user-originated messages. Defaults role to `"user"`.
+Use `on_truncate` when dropped context matters:
 
-**Constructor**
+```python
+def save_dropped(memories):
+    archive.extend(memories)
 
-```py
-UserMem(message: str, created, role: str = "user")
+history = History(size=20, on_truncate=save_dropped)
 ```
 
----
+Without `on_truncate`, Synaptic emits a warning when history truncates.
 
-### `History`
+## Tool Calls
 
-**Type:** class — sliding-window container for `Memory` objects
+`ResponseMem.tool_calls` stores parsed provider function calls.
 
-**Constructor**
-
-```py
-History(memoryList: List[Memory] = [], size: int = 10)
+```python
+names = response.list_tool_calls()
+call = response.get_tool_call("search")
 ```
 
-**Fields**
+`get_tool_call` raises `IndexError` if the name is missing.
 
-- `MemoryList: list[Memory]` — ordered list of stored memories (oldest first).
-- `size: int` — maximum number of entries to keep.
+## Completing Tool Calls
 
-**Methods**
+Agents use `complete_tool_call` to attach results atomically:
 
-- `_size_update()` — internal; drops oldest memories when `len(MemoryList) > size`.
-- `window(size: int) -> list[Memory]` — set window size (returns current list).
-- `add(memory: Memory) -> None` — append a memory and enforce window size.
+```python
+from synaptic import complete_tool_call
 
-**Notes**
-
-- `History` uses a simple list-backed policy (pop from front).
-- The default `memoryList` parameter is mutable in the shown implementation; when adapting, prefer `None` default and create a new list in `__init__` to avoid shared state across instances.
-
----
-
-## Example
-
-```py
-from synaptic.core.base.memory import Memory, ResponseMem, History
-
-h = History(size=3)
-h.add(Memory("hi", created="2025-01-01T00:00:00Z", role="user"))
-h.add(ResponseMem("hey", created="2025-01-01T00:00:01Z", tool_calls=[]))
-print(h.MemoryList)
+complete_tool_call(response, [{"name": "search", "result": "..."}], history)
 ```
+
+If a history is passed and the response is not already present, it is added.
+
+## Prompt Continuation
+
+When an agent continues after tools run, it calls the provider with
+`prompt=None`. That means no new `UserMem` is added for the continuation.

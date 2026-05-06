@@ -1,76 +1,95 @@
 # Synaptic
 
-> A modular framework for building, managing, and running AI models and tools
-> with provider abstraction.
+Synaptic is a small Python framework for building LLM applications with a
+provider-neutral `Model`, typed conversation memory, tool/function calling,
+multi-turn agents, streaming events, and lightweight workflow helpers.
 
----
-
-## Features
-
-- **Core abstractions**
-  - `base_model` – shared model logic
-  - `memory` – memory handling utilities
-  - `tool` – tool integration layer
-- **Provider support**
-  - OpenAI (`synaptic.providers.openai_`)
-  - Gemini (`synaptic.providers.gemini`)
-- **Extensible**: Easily add new providers or tools by extending the core base classes.
-- **Lightweight**: Minimal dependencies, designed for composability.
-
----
-
-## Project Structure
-
-```
-
-synaptic/
-├── core/               # Core framework modules
-│   ├── base/           # Base abstractions
-│   ├── model.py        # Generic model management
-│   ├── provider.py     # Provider handling
-│   └── tool.py         # Tool integrations
-├── providers/          # AI provider implementations
-│   ├── openai\_/       # OpenAI provider
-│   └── gemini/         # Gemini provider
-
-```
-
----
-
-## Installation
+## Install
 
 ```bash
-# Clone the repo
 git clone https://github.com/PhoeniX5971/synaptic.git
 cd synaptic
-
-# Install dependencies
 pip install -e .
 ```
 
----
+Install the SDKs for the providers you plan to use. For example, OpenAI-backed
+models need the OpenAI SDK and an API key passed to `Model(api_key=...)` or
+configured in your environment.
 
-## Wiki
+## First Model Call
 
-[Synaptic Wiki](https://synaptic-wiki.vercel.app)
+```python
+from synaptic import Model, Provider
+
+model = Model(
+    provider=Provider.OPENAI,
+    model="gpt-4o-mini",
+    api_key="...",
+    instructions="Answer briefly.",
+)
+
+res = model.invoke("What is Synaptic?")
+print(res.message)
+```
+
+## Tools
+
+```python
+from synaptic import Model, Provider, autotool
+
+@autotool("Add two integers")
+def add(a: int, b: int) -> int:
+    return a + b
+
+model = Model(
+    provider=Provider.OPENAI,
+    model="gpt-4o-mini",
+    api_key="...",
+    tools=[add],
+    autorun=True,
+)
+
+res = model.invoke("Use the add tool for 2 + 3")
+print(res.tool_calls)
+print(res.tool_results)
+```
+
+## Agent Loop
+
+Use `Agent` when tools should feed back into the model until the answer is
+finished.
+
+```python
+from synaptic import Agent
+
+agent = Agent(model, max_turns=5)
+res = agent.run("Calculate 2 + 3 and explain the result")
+print(res.message)
+```
+
+## Streaming
+
+```python
+async for chunk in model.astream("Write a haiku"):
+    print(chunk.text, end="")
+```
+
+## Main Concepts
+
+- `Model`: one provider/model configuration.
+- `Agent`: multi-turn tool loop around a model.
+- `Tool` / `autotool`: expose Python functions to providers.
+- `ToolRegistry`: isolate tools per test, user, tenant, or session.
+- `History`: sliding-window memory used as provider context.
+- `Session`: state and history container for agent runs.
+- `EventBus`: subscribe to agent text/tool/step events.
+- `Flow` / `Pipeline`: lightweight sync/async workflow helpers.
+
+## Documentation
+
+Start with [`docs/README.md`](docs/README.md). The docs cover every public
+surface needed to use Synaptic without prior knowledge.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 (GPLv3).
-
-Copyright (c) 2025 PhoeniX5971
-
-You are free to use, modify, and distribute this project under the same license.
-Please retain author attribution in redistributions.
-
----
-
-### Disclaimer
-
-This software is provided "as is", without warranty of any kind, express or implied,
-including but not limited to the warranties of merchantability, fitness for a particular
-purpose, and noninfringement.
-
-In no event shall the author or contributors be liable for any claim, damages, or other
-liability, whether in an action of contract, tort, or otherwise, arising from, out of,
-or in connection with the software or the use or other dealings in the software.
+GNU General Public License v3.0. See the repository license for details.

@@ -1,25 +1,19 @@
-from datetime import datetime, timezone
 from typing import Any, List, Optional
-import inspect
 
-from ..providers import (
-    ClaudeAdapter,
-    DeepSeekAdapter,
-    GeminiAdapter,
-    OpenAIAdapter,
-    TogetherAdapter,
-    UniversalLLMAdapter,
-    VertexAdapter,
-    XAIAdapter,
-)
-from .base import History, ResponseFormat, ResponseMem, UserMem
+from . import _runner as _r
+from ._factory import build_adapter
+from .base import History, ResponseFormat, ResponseMem
 from .provider import Provider
-from .tool import Tool, ToolCall
+from .tool import Tool, ToolRegistry
 
 
 class Model:
-    """
-    Universal model which will allow usage of different LLM providers.
+    """Provider-neutral interface for one LLM configuration.
+
+    `Model` owns provider selection, prompt invocation, streaming delegation,
+    optional memory writes, optional one-shot tool execution, and dynamic
+    `history`/`instructions` updates. Use `Agent` when you want a multi-turn
+    loop that continues after tools return results.
     """
 
     def __init__(
@@ -27,7 +21,7 @@ class Model:
         provider: Provider,
         model: str,
         temperature: float = 0.8,
-        api_key: str = "",  # type: ignore
+        api_key: str = "",
         max_tokens: int = 1024,
         tools: Optional[List[Tool]] = None,
         history: Optional[History] = None,
@@ -37,89 +31,67 @@ class Model:
         location: Optional[str] = None,
         project: Optional[str] = None,
         instructions: str = "",
-        response_format: ResponseFormat = ResponseFormat.NONE,  # type: ignore
-        response_schema: Any = None,  # type: ignore
+        response_format: ResponseFormat = ResponseFormat.NONE,
+        response_schema: Any = None,
         base_url: Optional[str] = None,
+        tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
-        """
-        Constructor:
-        provider:
-            type: Provider -- File: synaptic.core.provider Class Provider
-            description: enum
-                values:
-                    - OPENAI
-                    - GEMINI
-                    - DEEPSEEK
-                    - VERTEX
-                    - TOGETHER
-                    - CLAUDE
-                    - UNIVERSAL_OPENAI
-        model:
-            type: str
-            description: model name to use from the provider
-        temperature:
-            type: float
-            description: sampling temperature for response generation
-        api_key:
-            type: str
-            description: API key for the provider
-        max_tokens:
-            type: int
-            description: maximum tokens for the response
-        tools:
-            type: List[Tool] -- File: synaptic.core.tool Class Tool
-            description: list of tools to bind to the model
-        history:
-            type: History -- File: synaptic.core.base.memory Class History
-            description: conversation history manager
-        autorun:
-            type:bool
-            description: whether to automatically run tools returned by the model
-        automem:
-            type: bool
-            description: whether to automatically store interactions in history
-        blacklist:
-            type: List[str]
-            description: list of tool names to ignore in autorun
-        base_url:
-            type: Optional[str]
-            description: base URL for UNIVERSAL_OPENAI provider
-        """
         self.provider = provider
         self.model = model
         self.temperature = temperature
         self.api_key = api_key
         self.max_tokens = max_tokens
-        self.tools = tools or []
         self.autorun = autorun
         self.automem = automem
-        self.history = history or History()
         self.blacklist = blacklist or []
         self.response_format = response_format
         self.response_schema = response_schema
         if self.response_format != ResponseFormat.NONE and self.response_schema is None:
-            raise ValueError(
-                "Response schema must be provided for structured response formats"
-            )
+            raise ValueError("Response schema must be provided for structured response formats")
         self.location = location
         self.project = project
         self.base_url = base_url
-        # Store instructions privately; the property syncs changes to self.llm
+        self.tool_registry = tool_registry
         self._instructions = instructions
-        self.llm = self._initiate_model()
+        self._history = history or History()
+
+        adapter_tools = (tools or []) if self.response_format == ResponseFormat.NONE else None
+        self.llm = build_adapter(
+            provider=provider,
+            model=model,
+            temperature=temperature,
+            api_key=api_key,
+            max_tokens=max_tokens,
+            tools=adapter_tools,
+            history=self._history,
+            response_format=response_format,
+            response_schema=response_schema,
+            instructions=instructions,
+            location=location,
+            project=project,
+            base_url=base_url,
+            tool_registry=tool_registry,
+        )
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
 
-        if tools:
-            self.bind_tools(tools)
-
         if not self.automem:
-            self.history.window(1)
+            self._history.window(1)
 
-    # ------------------------------------------------------------------
-    # Dynamic instructions — setting model.instructions updates the
-    # underlying adapter in-place without rebuilding anything.
-    # ------------------------------------------------------------------
+    # ------------------------------------------------------------------ #
+    # Properties                                                           #
+    # ------------------------------------------------------------------ #
+
+    @property
+    def history(self) -> History:
+        return self._history
+
+    @history.setter
+    def history(self, value: History) -> None:
+        self._history = value
+        if hasattr(self, "llm"):
+            self.llm.history = value
+
     @property
     def instructions(self) -> str:
         return self._instructions
@@ -130,325 +102,46 @@ class Model:
         if hasattr(self, "llm"):
             self.llm.instructions = value
 
+    # ------------------------------------------------------------------ #
+    # Tool binding                                                         #
+    # ------------------------------------------------------------------ #
+
     def bind_tools(self, tools: List[Tool]) -> None:
-        """
-        bind_tools:
-            type: method
-            return type: None
-            parameters:
-                - List[Tool] -- File: synaptic.core.tool Class Tool
-            description: bind additional tools to the model
-        """
+        """Attach tools directly to this model and refresh adapter schemas."""
         if self.tools is None:
             self.tools = []
         self.tools += tools
         self.llm.synaptic_tools = self.tools
         self.llm._invalidate_tools()
 
-    def _initiate_model(self) -> Any:
-        """
-        _initiate_model:
-            type: method
-            return type: BaseModel -- File: synaptic.core.base.base_model Class BaseModel
-            parameters: None
-            description: initiate the model based on the provider
-        """
-        tools = self.tools if self.response_format == ResponseFormat.NONE else None
-
-        if self.provider == Provider.CLAUDE:
-            return ClaudeAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-                max_tokens=self.max_tokens,
-            )
-        elif self.provider == Provider.OPENAI:
-            return OpenAIAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        elif self.provider == Provider.GEMINI:
-            return GeminiAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        elif self.provider == Provider.VERTEX:
-            return VertexAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=None,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-                location=self.location,  # type: ignore
-                project=self.project,  # type: ignore
-            )
-        elif self.provider == Provider.DEEPSEEK:
-            return DeepSeekAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,  # type: ignore
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        elif self.provider == Provider.TOGETHER:
-            return TogetherAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        elif self.provider == Provider.XAI:
-            return XAIAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        elif self.provider == Provider.UNIVERSAL_OPENAI:
-            return UniversalLLMAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                base_url=self.base_url or "",
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-        # default to Gemini if unknown
-        else:
-            return GeminiAdapter(
-                model=self.model,
-                temperature=self.temperature,
-                tools=tools,
-                history=self.history,
-                api_key=self.api_key,
-                response_format=self.response_format,
-                response_schema=self.response_schema,
-                instructions=self._instructions,
-            )
-
-    def _run_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
-        results = []
-        tool_map = {tool.name: tool for tool in self.llm.synaptic_tools}
-
-        for call in tool_calls:
-            if not isinstance(call, ToolCall):
-                results.append({"error": "Invalid tool call format"})
-                continue
-            name, args = call.name, call.args
-            tool = tool_map.get(name)
-
-            if tool and name not in self.blacklist:
-                if tool.is_async:
-                    raise RuntimeError(
-                        f"Tool '{name}' is async, cannot run in sync invoke()"
-                    )
-                try:
-                    res = tool.run(**args)
-                    results.append({"name": name, "result": res})
-                except Exception as e:
-                    results.append({"name": name, "error": str(e)})
-            else:
-                results.append(
-                    {"name": name, "error": "Tool not registered or blacklisted"}
-                )
-        return results
-
-    async def _arun_tools(self, tool_calls: List[ToolCall]) -> List[Any]:
-        """
-        run_tools:
-            type: method
-            return type: List[Any]
-            parameters:
-                - List[ToolCall] -- File: synaptic.core.tool Class ToolCall
-            description: internal tool runner, requires autorun to be true
-        """
-        results = []
-        tool_map = {tool.name: tool for tool in self.llm.synaptic_tools}
-
-        for call in tool_calls:
-            if not isinstance(call, ToolCall):
-                results.append({"error": "Invalid tool call format"})
-                continue
-            name, args = call.name, call.args
-            tool = tool_map.get(name)
-
-            if tool and name not in self.blacklist:
-                try:
-                    res = tool.run(**args)
-                    if inspect.iscoroutine(res):
-                        res = await res
-
-                    results.append({"name": name, "result": res})
-                except Exception as e:
-                    results.append({"name": name, "error": str(e)})
-            else:
-                results.append(
-                    {"name": name, "error": "Tool not registered or blacklisted"}
-                )
-
-        return results
+    # ------------------------------------------------------------------ #
+    # Invoke / stream delegation                                           #
+    # ------------------------------------------------------------------ #
 
     def invoke(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: Optional[str], role: str = "user",
+        images: Optional[List[str]] = None, audio: Optional[List[str]] = None,
+        autorun: bool = None, automem: bool = None, **kwargs,
     ) -> ResponseMem:
-        """
-        invoke:
-            type: method
-            return type: ResponseMem -- File: synaptic.core.base.memory Class ResponseMem
-            parameters:
-                - prompt: str
-                - autorun: bool (optional, overrides instance autorun)
-                - automem: bool (optional, overrides instance automem)
-                - **kwargs: additional parameters for the model's invoke method
-            description: invoke the model with a prompt optionally, optionally provide role, auto run tools and auto manage memory
-        """
-        if role not in ["user", "assistant", "system"]:
-            raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
-
-        created = datetime.now().astimezone(timezone.utc)
-
-        memory = self.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
-
-        autorun = autorun if (autorun is not None) else self.autorun
-        automem = automem if (automem is not None) else self.automem
-
-        if autorun:
-            if any(tool.is_async for tool in self.llm.synaptic_tools):
-                raise RuntimeError("invoke() cannot run async tools; use ainvoke()")
-            if memory.tool_calls:
-                tool_results = self._run_tools(memory.tool_calls)
-                memory.tool_results = tool_results
-        else:
-            memory.tool_results = []
-
-        if automem and self.history:
-            self.history.add(UserMem(message=prompt, role=role, created=created))
-            self.history.add(memory)
-
-        return memory
+        """Run one synchronous provider call and return a `ResponseMem`."""
+        return _r.invoke(self, prompt, role=role, images=images, audio=audio,
+                         autorun=autorun, automem=automem, **kwargs)
 
     async def ainvoke(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: Optional[str], role: str = "user",
+        images: Optional[List[str]] = None, audio: Optional[List[str]] = None,
+        autorun: bool = None, automem: bool = None, **kwargs,
     ) -> ResponseMem:
-        """
-        ainvoke:
-            type: method
-            return type: ResponseMem -- File: synaptic.core.base.memory Class ResponseMem
-            parameters:
-                - prompt: str
-                - autorun: bool (optional, overrides instance autorun)
-                - automem: bool (optional, overrides instance automem)
-                - **kwargs: additional parameters for the model's invoke method
-            description: same as invoke but async, utilizes a different async runner
-        """
-        if role not in ["user", "assistant", "system"]:
-            raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
-
-        created = datetime.now().astimezone(timezone.utc)
-
-        memory = self.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
-
-        autorun = autorun if (autorun is not None) else self.autorun
-        automem = automem if (automem is not None) else self.automem
-
-        if autorun:
-            if memory.tool_calls:
-                tool_results = await self._arun_tools(memory.tool_calls)
-                memory.tool_results = tool_results
-        else:
-            memory.tool_results = []
-
-        if automem and self.history:
-            self.history.add(UserMem(message=prompt, role=role, created=created))
-            self.history.add(memory)
-
-        return memory
+        """Run one provider call from async code and return a `ResponseMem`."""
+        return await _r.ainvoke(self, prompt, role=role, images=images, audio=audio,
+                                autorun=autorun, automem=automem, **kwargs)
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, autorun: bool = None, automem: bool = None, **kwargs  # type: ignore
+        self, prompt: Optional[str], role: str = "user",
+        images: Optional[List[str]] = None, audio: Optional[List[str]] = None,
+        autorun: bool = None, automem: bool = None, abort=None, **kwargs,
     ):
-        """
-        astream:
-            Async generator wrapper around provider streaming (llm.astream).
-            - Yields raw chunks from the provider's astream().
-            - If autorun=True, runs tool calls as they appear (using _arun_tools).
-            - If automem=True, saves the user prompt and final ResponseMem into history.
-            - Produces the same chunk objects the provider yields (no transformation).
-        """
-        if role not in ["user", "assistant", "system"]:
-            raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
-
-        autorun = autorun if (autorun is not None) else self.autorun
-        automem = automem if (automem is not None) else self.automem
-
-        if not hasattr(self.llm, "astream"):
-            raise NotImplementedError("Underlying model does not implement astream()")
-
-        created = datetime.now().astimezone(timezone.utc)
-
-        accumulated_message = ""
-        tool_calls: List[ToolCall] = []
-        tool_results: List[Any] = []
-
-        async for chunk in self.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs):
+        """Yield provider stream chunks, optionally stopping on `abort`."""
+        async for chunk in _r.astream(self, prompt, role=role, images=images, audio=audio,
+                                      autorun=autorun, automem=automem, abort=abort, **kwargs):
             yield chunk
-
-            if getattr(chunk, "text", None):
-                accumulated_message += chunk.text
-
-            if getattr(chunk, "function_call", None):
-                tool_calls.append(chunk.function_call)
-
-                if autorun and chunk.function_call:
-                    try:
-                        tr = await self._arun_tools([chunk.function_call])
-                        tool_results.extend(tr)
-                    except Exception as e:
-                        tool_results.append(
-                            {"name": chunk.function_call.name, "error": str(e)}
-                        )
-
-        final_mem = ResponseMem(
-            message=accumulated_message, created=created, tool_calls=tool_calls
-        )
-        final_mem.tool_results = tool_results
-
-        if automem and self.history:
-            self.history.add(UserMem(message=prompt, role=role, created=created))
-            self.history.add(final_mem)
-
-        return

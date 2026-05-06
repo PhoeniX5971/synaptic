@@ -1,37 +1,89 @@
 import inspect
-from typing import Callable, Any
 import types
-
-TOOL_REGISTRY = {}
-_registry_callbacks = []  # FOR SUBSCRIBED MODELS
+from typing import Any, Callable, Dict, List, Optional
 
 
-def register_callback(fn: Callable[[], None]):
+class ToolRegistry:
+    """Collection of tools for one model, agent, session, or application.
+
+    Use a dedicated registry when tests, tenants, or concurrent agents should
+    not see each other's tools. Passing the registry to `Model` makes provider
+    adapters expose only tools from that registry plus tools bound directly to
+    the model.
     """
-    SUBSCRIBES A MODEL TO TOOL REGISTRY CHANGES
-    Takes a function with no arguments from the model
-    on each and adds it to the registry callbacks list
-    this list is called on each change to the tool registry
-    """
-    _registry_callbacks.append(fn)
+
+    def __init__(self) -> None:
+        self._tools: Dict[str, "Tool"] = {}
+        self._callbacks: List[Callable[[], None]] = []
+
+    def register(self, tool: "Tool") -> None:
+        """Add or replace a tool by name and notify adapter subscribers."""
+        self._tools[tool.name] = tool
+        for cb in self._callbacks:
+            cb()
+
+    def on_change(self, fn: Callable[[], None]) -> None:
+        """Subscribe a no-argument callback fired after registration."""
+        self._callbacks.append(fn)
+
+    def all(self) -> Dict[str, "Tool"]:
+        """Return the registry's live name-to-tool mapping."""
+        return self._tools
+
+    def autotool(
+        self,
+        description: str = "",
+        param_descriptions: Optional[Dict[str, str]] = None,
+        default_params: Optional[dict] = None,
+    ) -> Callable:
+        """Scoped version of @autotool that registers to this registry."""
+        return autotool(
+            description=description,
+            param_descriptions=param_descriptions,
+            default_params=default_params,
+            registry=self,
+        )
 
 
-def _notify_change():
-    """
-    Calls all subscribed model callbacks to notify them of a change in the tool registry
-    """
-    for cb in _registry_callbacks:
-        cb()
+_default_registry = ToolRegistry()
+TOOL_REGISTRY: Dict[str, "Tool"] = _default_registry._tools
+
+
+def register_callback(fn: Callable[[], None]) -> None:
+    """Subscribe to changes on the process-wide default registry."""
+    _default_registry.on_change(fn)
+
+
+def collect_tools(
+    tools: Optional[List["Tool"]] = None,
+    registry: Optional[ToolRegistry] = None,
+) -> Dict[str, "Tool"]:
+    """Merge explicit tools with a registry, preferring explicit tools."""
+    all_tools: Dict[str, "Tool"] = {}
+    for tool in tools or []:
+        all_tools[tool.name] = tool
+    source = registry.all() if registry is not None else TOOL_REGISTRY
+    for name, tool in source.items():
+        if name not in all_tools:
+            all_tools[name] = tool
+    return all_tools
 
 
 class Tool:
+    """Callable exposed to model providers through function/tool calling.
+
+    `declaration` is the provider-neutral JSON schema-ish object sent to
+    adapters. `function` may be sync or async; `run` is assigned accordingly.
+    """
+
     def __init__(
         self,
         name: str,
         declaration: dict,
         function: Callable[..., Any] = lambda: None,
-        default_params: dict | None = None,
+        default_params: Optional[dict] = None,
         add_to_registry: bool = True,
+        registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.name = name
         self.declaration = declaration
@@ -42,40 +94,35 @@ class Tool:
         self.default_params = default_params or {}
 
         if add_to_registry:
-            TOOL_REGISTRY[name] = self
-            _notify_change()
+            target = registry or _default_registry
+            target.register(self)
 
-        if self.is_async:
-            self.run = self._run_async
-        else:
-            self.run = self._run_sync
+        self.run = self._run_async if self.is_async else self._run_sync
 
     def __get__(self, instance, owner):
-        """
-        Descriptor access to automatically bind methods to instances.
-        """
+        """Bind decorated methods to their instance without re-registering."""
         if instance is None:
-            return self  # accessed via class
-
-        bound_fn = types.MethodType(self.function, instance)
+            return self
         return Tool(
             name=self.name,
             declaration=self.declaration,
-            function=bound_fn,
+            function=types.MethodType(self.function, instance),
             default_params=self.default_params,
             add_to_registry=False,
         )
 
     def _run_sync(self, **kwargs):
-        final = {**self.default_params, **kwargs}
-        return self.function(**final)
+        """Run a sync tool with defaults merged before call-time arguments."""
+        return self.function(**{**self.default_params, **kwargs})
 
     async def _run_async(self, **kwargs):
-        final = {**self.default_params, **kwargs}
-        return await self.function(**final)
+        """Run an async tool with defaults merged before call-time arguments."""
+        return await self.function(**{**self.default_params, **kwargs})
 
 
 class ToolCall:
+    """Parsed model request to call a named tool with JSON-like arguments."""
+
     def __init__(self, name: str, args: dict):
         self.name = name
         self.args = args
@@ -87,64 +134,50 @@ class ToolCall:
         return self.args.keys()
 
     def __repr__(self):
-        args_repr = {k: v for k, v in self.args.items() if len(str(v)) < 50}
-        args_str = ", ".join(f"{k}={v!r}" for k, v in args_repr.items())
-        return f"<ToolCall(name={self.name!r}, args={{ {args_str} }})>"
+        short = {k: v for k, v in self.args.items() if len(str(v)) < 50}
+        return f"<ToolCall name={self.name!r} args={short}>"
 
 
 def autotool(
     description: str = "",
-    param_descriptions: dict[str, str] | None = None,
-    default_params: dict | None = None,
+    param_descriptions: Optional[Dict[str, str]] = None,
+    default_params: Optional[dict] = None,
     autobind: bool = True,
-):
+    registry: Optional[ToolRegistry] = None,
+) -> Callable:
+    """Decorate a function as a `Tool` with an inferred parameter schema."""
     param_descriptions = param_descriptions or {}
 
-    def decorator(func: Callable[..., Any]):
+    def decorator(func: Callable[..., Any]) -> Tool:
         sig = inspect.signature(func)
-        properties: dict[str, dict] = {}
-        required_params: list[str] = []
+        properties: dict = {}
+        required: list = []
 
-        for name, param in sig.parameters.items():
-            # skip instance/class receivers
-            if name in ("self", "cls"):
+        for pname, param in sig.parameters.items():
+            if pname in ("self", "cls"):
                 continue
-
-            # determine JSON type (simplified)
             anno = param.annotation
-            if anno in [int, float]:
-                ptype = "number" if anno is float else "integer"
-            elif anno is bool:
-                ptype = "boolean"
-            elif anno is str:
-                ptype = "string"
-            else:
-                ptype = "string"
-
-            properties[name] = {
-                "type": ptype,
-                "description": param_descriptions.get(name, ""),
-            }
-
+            ptype = (
+                "number" if anno is float
+                else "integer" if anno is int
+                else "boolean" if anno is bool
+                else "string"
+            )
+            properties[pname] = {"type": ptype, "description": param_descriptions.get(pname, "")}
             if param.default is inspect.Parameter.empty:
-                required_params.append(name)
+                required.append(pname)
 
         parameters = {"type": "object", "properties": properties}
-        if required_params:
-            parameters["required"] = required_params
-
-        declaration = {
-            "name": func.__name__,
-            "description": description,
-            "parameters": parameters,
-        }
+        if required:
+            parameters["required"] = required
 
         return Tool(
             name=func.__name__,
-            declaration=declaration,
+            declaration={"name": func.__name__, "description": description, "parameters": parameters},
             function=func,
             default_params=default_params,
             add_to_registry=autobind,
+            registry=registry,
         )
 
     return decorator

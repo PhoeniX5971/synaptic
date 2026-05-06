@@ -1,17 +1,11 @@
-import asyncio
-import base64
-import json
-import mimetypes
-import threading
-import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
+from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
+from .helpers import add_prompt, history_messages, parse_tool_calls, stream_tool_calls
 
 
 class OpenAIAdapter(BaseModel):
@@ -25,147 +19,53 @@ class OpenAIAdapter(BaseModel):
         tools: Optional[List[Tool]],
         temperature: float = 0.8,
         instructions: str = "",
+        tool_registry: Optional[ToolRegistry] = None,
         **kwargs,
     ):
         self.client = OpenAI(api_key=api_key)
+        self.async_client = AsyncOpenAI(api_key=api_key)
         self.model = model
-        self.synaptic_tools = list(tools or [])
-        self.openai_tools: List[Dict] = []
-        self.temperature = temperature
         self.history = history
+        self.synaptic_tools = list(tools or [])
+        self.openai_tools: List[Dict[str, Any]] = []
+        self.temperature = temperature
         self.response_format = response_format
         self.response_schema = response_schema
         self.instructions = instructions
-        self.role_map = {
-            "user": "user",
-            "assistant": "assistant",
-            "system": "system",
-        }
-
+        self.tool_registry = tool_registry
+        self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
         register_callback(self._invalidate_tools)
         self._invalidate_tools()
 
-    def _invalidate_tools(self):
-        """Update OpenAI tools when registry changes"""
+    def _invalidate_tools(self) -> None:
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic tools + TOOL_REGISTRY to OpenAI tool format"""
         self.openai_tools = []
-
-        all_tools = {}
-        for t in self.synaptic_tools or []:
-            all_tools[t.name] = t
-        for t_name, t in TOOL_REGISTRY.items():
-            if t_name not in all_tools:
-                all_tools[t_name] = t
-
-        for t_name, t in all_tools.items():
-            self.openai_tools.append({"type": "function", "function": t.declaration})
-
+        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        for tool in all_tools.values():
+            self.openai_tools.append({"type": "function", "function": tool.declaration})
         self.synaptic_tools = list(all_tools.values())
 
-    def to_contents(self) -> List[Dict[str, Any]]:
-        """Convert memory list to OpenAI-style messages with proper tool messages."""
-        contents = []
+    def _messages(self, prompt: Optional[str], role: str, audio: Optional[List[str]]) -> List[Dict[str, Any]]:
+        messages = history_messages(self.history, self.instructions, self.role_map)
+        add_prompt(messages, prompt, self.role_map.get(role, "user"), audio)
+        return messages
 
-        if self.instructions:
-            contents.append({"role": "system", "content": self.instructions})
-
-        if self.history is None:
-            return contents
-
-        for memory in self.history.MemoryList:
-            message_content = memory.message
-
-            message: Dict[str, Any] = {
-                "role": self.role_map.get(memory.role, "user"),
-                "content": message_content,
-            }
-
-            if isinstance(memory, ResponseMem) and getattr(memory, "tool_calls", None):
-                message["tool_calls"] = [
-                    {
-                        "id": f"call_{i}",
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(call.args) if call.args else "{}",
-                        },
-                    }
-                    for i, call in enumerate(memory.tool_calls)
-                ]
-
-            contents.append(message)
-
-            if isinstance(memory, ResponseMem) and getattr(
-                memory, "tool_results", None
-            ):
-                for i, result in enumerate(memory.tool_results):
-                    try:
-                        if hasattr(result, "model_dump"):
-                            content_str = json.dumps(result.model_dump())
-                        elif hasattr(result, "__dict__"):
-                            content_str = json.dumps(result.__dict__)
-                        elif isinstance(result, (dict, list)):
-                            content_str = json.dumps(result)
-                        else:
-                            content_str = str(result)
-                    except Exception:
-                        content_str = str(result)
-
-                    contents.append(
-                        {
-                            "role": "tool",
-                            "name": (
-                                memory.tool_calls[i].name
-                                if memory.tool_calls
-                                else f"tool_{i}"
-                            ),
-                            "content": content_str,
-                            "tool_call_id": f"call_{i}",
-                        }
-                    )
-
-        return contents
-
-    def _audio_content_blocks(self, audio: Optional[List[str]]) -> List[Dict]:
-        blocks = []
-        for src in (audio or []):
-            p = Path(src)
-            if p.exists():
-                data = p.read_bytes()
-                mime, _ = mimetypes.guess_type(src)
-                mime = mime or "audio/mpeg"
-            else:
-                with urllib.request.urlopen(src) as r:
-                    data = r.read()
-                    mime = r.headers.get_content_type() or "audio/mpeg"
-            fmt = mime.split("/")[-1].replace("mpeg", "mp3")
-            blocks.append({"type": "input_audio", "input_audio": {"data": base64.b64encode(data).decode(), "format": fmt}})
-        return blocks
-
-    def invoke(self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
-        """Invoke OpenAI model with modern API using to_contents style"""
-        role = self.role_map.get(role, "user")
-
-        audio_blocks = self._audio_content_blocks(audio)
-        if audio_blocks:
-            content = [{"type": "text", "text": prompt}] + audio_blocks
-        else:
-            content = prompt
-        messages = self.to_contents() + [{"role": role, "content": content}]
-
-        request_params = {
+    def _request(self, messages: List[Dict[str, Any]], streaming: bool, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
             "model": self.model,
             "temperature": self.temperature,
             "messages": messages,
-            "max_tokens": kwargs.get("max_tokens", 1024),
+            **kwargs,
         }
-
+        if not streaming:
+            params["max_tokens"] = params.pop("max_tokens", 1024)
+        else:
+            params["stream"] = True
         if self.response_format == ResponseFormat.JSON:
             if hasattr(self.response_schema, "model_json_schema"):
-                request_params["response_format"] = {
+                params["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {
                         "name": self.response_schema.__name__,
@@ -173,127 +73,59 @@ class OpenAIAdapter(BaseModel):
                     },
                 }
             else:
-                request_params["response_format"] = {"type": "json_object"}
+                params["response_format"] = {"type": "json_object"}
+        elif self.openai_tools:
+            params["tools"] = self.openai_tools
+            params["tool_choice"] = "auto"
+        return params
 
-        if self.openai_tools and self.response_format == ResponseFormat.NONE:
-            request_params["tools"] = self.openai_tools
-            request_params["tool_choice"] = "auto"
-
-        try:
-            response = self.client.chat.completions.create(**request_params)
-        except Exception:
-            response = self.client.chat.completions.create(**request_params)
-
+    def invoke(
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        audio: Optional[List[str]] = None,
+        **kwargs,
+    ) -> ResponseMem:
+        params = self._request(self._messages(prompt, role, audio), False, kwargs)
+        response = self.client.chat.completions.create(**params)
         created = datetime.now().astimezone(timezone.utc)
         message = ""
         tool_calls: List[ToolCall] = []
-
         if response.choices:
             choice = response.choices[0]
             message = choice.message.content or ""
-
-            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
-                for tool_call in choice.message.tool_calls:
-                    if hasattr(tool_call, "function"):
-                        try:
-                            args = (
-                                json.loads(tool_call.function.arguments)
-                                if tool_call.function.arguments
-                                else {}
-                            )
-                        except json.JSONDecodeError:
-                            args = {}
-                        tool_calls.append(
-                            ToolCall(name=tool_call.function.name, args=args)
-                        )
-
+            tool_calls = parse_tool_calls(choice.message)
         return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", audio: Optional[List[str]] = None, **kwargs
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        audio: Optional[List[str]] = None,
+        abort=None,
+        **kwargs,
     ) -> AsyncIterator[ResponseChunk]:
-        """
-        Asynchronously stream response chunks from OpenAI.
+        params = self._request(self._messages(prompt, role, audio), True, kwargs)
+        accumulated = ""
+        pending: Dict[int, Dict[str, str]] = {}
 
-        Runs the sync streaming client in a background thread and pushes chunks
-        into an asyncio.Queue. Tool call args are accumulated across deltas and
-        emitted as ResponseChunk(function_call=...) after the text stream ends.
-        """
-        role = self.role_map.get(role, "user")
-
-        audio_blocks = self._audio_content_blocks(audio)
-        if audio_blocks:
-            content = [{"type": "text", "text": prompt}] + audio_blocks
-        else:
-            content = prompt
-        messages = self.to_contents() + [{"role": role, "content": content}]
-
-        request_params: Dict[str, Any] = {
-            "model": self.model,
-            "temperature": self.temperature,
-            "messages": messages,
-            "stream": True,
-        }
-
-        if self.openai_tools and self.response_format == ResponseFormat.NONE:
-            request_params["tools"] = self.openai_tools
-            request_params["tool_choice"] = "auto"
-
-        loop = asyncio.get_running_loop()
-        q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
-
-        def producer():
-            try:
-                with self.client.chat.completions.create(**request_params) as stream:
-                    for chunk in stream:
-                        loop.call_soon_threadsafe(q.put_nowait, chunk)
-            except Exception as e:
-                loop.call_soon_threadsafe(q.put_nowait, e)
-            finally:
-                loop.call_soon_threadsafe(q.put_nowait, None)
-
-        threading.Thread(target=producer, daemon=True).start()
-
-        accumulated_message = ""
-        # index → {name, args} for incremental tool call assembly
-        pending_tool_calls: Dict[int, Dict[str, str]] = {}
-
-        while True:
-            item = await q.get()
-            if isinstance(item, Exception):
-                raise item
-            if item is None:
-                break
-
-            if not item.choices:
-                continue
-
-            delta = item.choices[0].delta
-
-            if delta.content:
-                accumulated_message += delta.content
-                yield ResponseChunk(
-                    text=delta.content, is_final=False, function_call=None
-                )
-
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in pending_tool_calls:
-                        pending_tool_calls[idx] = {"name": "", "args": ""}
+        async with self.async_client.chat.completions.stream(**params) as stream:
+            async for chunk in stream:
+                if abort and abort.is_set():
+                    return
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    accumulated += delta.content
+                    yield ResponseChunk(text=delta.content)
+                for tc_delta in delta.tool_calls or []:
+                    current = pending.setdefault(tc_delta.index, {"name": "", "args": ""})
                     if tc_delta.function.name:
-                        pending_tool_calls[idx]["name"] += tc_delta.function.name
+                        current["name"] += tc_delta.function.name
                     if tc_delta.function.arguments:
-                        pending_tool_calls[idx]["args"] += tc_delta.function.arguments
+                        current["args"] += tc_delta.function.arguments
 
-        # Emit fully-assembled tool calls after text stream completes
-        for idx in sorted(pending_tool_calls):
-            tc = pending_tool_calls[idx]
-            try:
-                args = json.loads(tc["args"]) if tc["args"] else {}
-            except json.JSONDecodeError:
-                args = {}
-            tfc = ToolCall(name=tc["name"], args=args)
-            yield ResponseChunk(text="", is_final=False, function_call=tfc)
-
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        for call in stream_tool_calls(pending):
+            yield ResponseChunk(text="", function_call=call)
+        yield ResponseChunk(text=accumulated, is_final=True)

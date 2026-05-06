@@ -1,18 +1,15 @@
 import asyncio
-import base64
 import json
-import mimetypes
 import threading
-import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
 from dotenv import load_dotenv
 from together import Together
 
 from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
-from ...core.tool import TOOL_REGISTRY, Tool, ToolCall, register_callback
+from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
+from .helpers import messages, parse_calls, pending_calls
 
 load_dotenv()
 
@@ -28,283 +25,120 @@ class TogetherAdapter(BaseModel):
         tools: Optional[List[Tool]],
         temperature: float = 0.8,
         instructions: str = "",
-        stream: bool = False,
+        tool_registry: Optional[ToolRegistry] = None,
     ):
         self.client = Together(api_key=api_key)
         self.model = model
-        self.synaptic_tools = list(tools or [])
-        self.together_tools: List[Dict] = []
-        self.temperature = temperature
         self.history = history
+        self.synaptic_tools = list(tools or [])
+        self.together_tools: List[Dict[str, Any]] = []
+        self.temperature = temperature
         self.response_format = response_format
         self.response_schema = response_schema
         self.instructions = instructions
-        self.stream = stream
-
-        self.role_map = {
-            "user": "user",
-            "assistant": "assistant",
-            "system": "system",
-        }
-
+        self.tool_registry = tool_registry
+        self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
         register_callback(self._invalidate_tools)
         self._invalidate_tools()
 
-    def _invalidate_tools(self):
-        """Update Together tools when registry changes."""
+    def _invalidate_tools(self) -> None:
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic tools + TOOL_REGISTRY to Together/OpenAI tool format."""
         self.together_tools = []
-
-        all_tools = {}
-        for t in self.synaptic_tools or []:
-            all_tools[t.name] = t
-        for t_name, t in TOOL_REGISTRY.items():
-            if t_name not in all_tools:
-                all_tools[t_name] = t
-
-        for t_name, t in all_tools.items():
-            self.together_tools.append({"type": "function", "function": t.declaration})
-
+        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        for tool in all_tools.values():
+            self.together_tools.append({"type": "function", "function": tool.declaration})
         self.synaptic_tools = list(all_tools.values())
 
-    def to_messages(self) -> List[Dict]:
-        """Convert all memories to Together/OpenAI chat message format."""
-        messages: List[Dict] = []
-
-        if self.history is None:
-            return messages
-
-        for memory in self.history.MemoryList:
-            if isinstance(memory, ResponseMem) and memory.tool_calls:
-                # Assistant turn with tool_calls — each call gets a unique ID by index
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": memory.message or "",
-                        "tool_calls": [
-                            {
-                                "id": f"call_{i}",
-                                "type": "function",
-                                "function": {
-                                    "name": tc.name,
-                                    "arguments": json.dumps(tc.args) if tc.args else "{}",
-                                },
-                            }
-                            for i, tc in enumerate(memory.tool_calls)
-                        ],
-                    }
-                )
-
-                # One tool result message per call, linked by ID
-                tool_results = getattr(memory, "tool_results", None) or []
-                for i, (tc, result) in enumerate(zip(memory.tool_calls, tool_results)):
-                    content_str = json.dumps(result) if isinstance(result, dict) else str(result)
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": f"call_{i}",
-                            "name": tc.name,
-                            "content": content_str,
-                        }
-                    )
-            else:
-                messages.append(
-                    {
-                        "role": self.role_map.get(memory.role, "user"),
-                        "content": memory.message,
-                    }
-                )
-
-        return messages
-
-    def _image_to_url(self, img: str) -> str:
-        """Return a data URI for local files, or pass through URLs as-is."""
-        p = Path(img)
-        if p.exists():
-            mime, _ = mimetypes.guess_type(img)
-            mime = mime or "application/octet-stream"
-            data = base64.b64encode(p.read_bytes()).decode()
-            return f"data:{mime};base64,{data}"
-        return img
-
-    def _audio_block(self, src: str) -> Dict:
-        p = Path(src)
-        if p.exists():
-            data = p.read_bytes()
-            mime, _ = mimetypes.guess_type(src)
-            mime = mime or "audio/mpeg"
-        else:
-            with urllib.request.urlopen(src) as r:
-                data = r.read()
-                mime = r.headers.get_content_type() or "audio/mpeg"
-        fmt = mime.split("/")[-1].replace("mpeg", "mp3")
-        return {"type": "input_audio", "input_audio": {"data": base64.b64encode(data).decode(), "format": fmt}}
-
-    def _build_content(self, prompt: str, images: Optional[List[str]], audio: Optional[List[str]] = None) -> Any:
-        """Return plain string content or a multipart content list when images/audio are given."""
-        if not images and not audio:
-            return prompt
-        parts: List[Dict] = [{"type": "text", "text": prompt}]
-        for img in (images or []):
-            parts.append({"type": "image_url", "image_url": {"url": self._image_to_url(img)}})
-        for src in (audio or []):
-            parts.append(self._audio_block(src))
-        return parts
-
-    def invoke(self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
-        role = self.role_map.get(role, "user")
-
-        messages: List[Dict] = []
-
-        system_message = self.instructions or ""
-        if self.response_format == ResponseFormat.JSON:
-            system_message += "\nYou must respond ONLY with valid JSON. Do not include explanations or markdown."
-
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        messages.extend(self.to_messages())
-        messages.append({"role": role, "content": self._build_content(prompt, images, audio)})
-
-        request_params: Dict[str, Any] = {
+    def _request(self, prompt, role, images, audio, should_stream, kwargs) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
             "model": self.model,
-            "messages": messages,
+            "messages": messages(self, prompt, role, images, audio),
             "temperature": self.temperature,
+            **kwargs,
         }
-
+        if should_stream:
+            params["stream"] = True
         if self.together_tools and self.response_format == ResponseFormat.NONE:
-            request_params["tools"] = self.together_tools
-            request_params["tool_choice"] = "auto"
-
+            params["tools"] = self.together_tools
+            params["tool_choice"] = "auto"
         if self.response_format == ResponseFormat.JSON:
-            request_params["response_format"] = {"type": "json_object"}
+            params["response_format"] = {"type": "json_object"}
+        return params
 
-        request_params.update(kwargs)
-
-        response = self.client.chat.completions.create(**request_params)
-
+    def invoke(
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        images: Optional[List[str]] = None,
+        audio: Optional[List[str]] = None,
+        **kwargs,
+    ) -> ResponseMem:
+        response = self.client.chat.completions.create(**self._request(prompt, role, images, audio, False, kwargs))
         created = datetime.now().astimezone(timezone.utc)
         message = ""
         tool_calls: List[ToolCall] = []
-
         if response.choices:
             choice = response.choices[0]
             message = choice.message.content or ""
-
-            if hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
-                for tc in choice.message.tool_calls:
-                    if hasattr(tc, "function"):
-                        try:
-                            args = (
-                                json.loads(tc.function.arguments)
-                                if tc.function.arguments
-                                else {}
-                            )
-                        except json.JSONDecodeError:
-                            args = {}
-                        tool_calls.append(ToolCall(name=tc.function.name, args=args))
-
+            tool_calls = parse_calls(choice.message)
         if self.response_format == ResponseFormat.JSON and not tool_calls:
             try:
-                parsed = json.loads(message)
-                message = json.dumps(parsed)
+                message = json.dumps(json.loads(message))
             except Exception:
                 pass
-
-        return ResponseMem(
-            message=message,
-            created=created,
-            tool_calls=tool_calls,
-        )
+        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
 
     async def astream(
-        self, prompt: str, role: str = "user", images: Optional[List[str]] = None, audio: Optional[List[str]] = None, **kwargs
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        images: Optional[List[str]] = None,
+        audio: Optional[List[str]] = None,
+        abort=None,
+        **kwargs,
     ) -> AsyncIterator[ResponseChunk]:
-        """
-        Asynchronously stream response chunks from Together AI.
-
-        Runs the sync streaming client in a background thread and pushes chunks
-        into an asyncio.Queue. Tool call args are accumulated across deltas and
-        emitted after the text stream ends.
-        """
-        role = self.role_map.get(role, "user")
-
-        messages: List[Dict] = []
-
-        system_message = self.instructions or ""
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
-
-        messages.extend(self.to_messages())
-        messages.append({"role": role, "content": self._build_content(prompt, images, audio)})
-
-        request_params: Dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-            "stream": True,
-            **kwargs,
-        }
-
-        if self.together_tools and self.response_format == ResponseFormat.NONE:
-            request_params["tools"] = self.together_tools
-            request_params["tool_choice"] = "auto"
-
         loop = asyncio.get_running_loop()
         q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
+        request = self._request(prompt, role, images, audio, True, kwargs)
 
-        def producer():
+        def producer() -> None:
             try:
-                for chunk in self.client.chat.completions.create(**request_params):
+                for chunk in self.client.chat.completions.create(**request):
+                    if abort and abort.is_set():
+                        break
                     loop.call_soon_threadsafe(q.put_nowait, chunk)
-            except Exception as e:
-                loop.call_soon_threadsafe(q.put_nowait, e)
+            except Exception as exc:
+                loop.call_soon_threadsafe(q.put_nowait, exc)
             finally:
                 loop.call_soon_threadsafe(q.put_nowait, None)
 
         threading.Thread(target=producer, daemon=True).start()
-
-        accumulated_message = ""
-        pending_tool_calls: Dict[int, Dict[str, str]] = {}
+        accumulated = ""
+        pending: Dict[int, Dict[str, str]] = {}
 
         while True:
             item = await q.get()
+            if abort and abort.is_set():
+                return
             if isinstance(item, Exception):
                 raise item
             if item is None:
                 break
-
             if not item.choices:
                 continue
-
             delta = item.choices[0].delta
-
             if delta.content:
-                accumulated_message += delta.content
-                yield ResponseChunk(
-                    text=delta.content, is_final=False, function_call=None
-                )
+                accumulated += delta.content
+                yield ResponseChunk(text=delta.content)
+            for tc_delta in delta.tool_calls or []:
+                current = pending.setdefault(tc_delta.index, {"name": "", "args": ""})
+                if tc_delta.function.name:
+                    current["name"] += tc_delta.function.name
+                if tc_delta.function.arguments:
+                    current["args"] += tc_delta.function.arguments
 
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in pending_tool_calls:
-                        pending_tool_calls[idx] = {"name": "", "args": ""}
-                    if tc_delta.function.name:
-                        pending_tool_calls[idx]["name"] += tc_delta.function.name
-                    if tc_delta.function.arguments:
-                        pending_tool_calls[idx]["args"] += tc_delta.function.arguments
-
-        for idx in sorted(pending_tool_calls):
-            tc = pending_tool_calls[idx]
-            try:
-                args = json.loads(tc["args"]) if tc["args"] else {}
-            except json.JSONDecodeError:
-                args = {}
-            tfc = ToolCall(name=tc["name"], args=args)
-            yield ResponseChunk(text="", is_final=False, function_call=tfc)
-
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        for call in pending_calls(pending):
+            yield ResponseChunk(text="", function_call=call)
+        yield ResponseChunk(text=accumulated, is_final=True)
