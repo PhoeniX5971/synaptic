@@ -146,7 +146,7 @@ class XAIAdapter(BaseModel):
 
         return client.chat.create(**kwargs)
 
-    def _parse_response(self, response: Any) -> ResponseMem:
+    def _parse_response(self, response: Any, usage: Any = None) -> ResponseMem:
         created = datetime.now().astimezone(timezone.utc)
         message = response.content or ""
         tool_calls = parse_calls(response)
@@ -155,8 +155,12 @@ class XAIAdapter(BaseModel):
                 message = json.dumps(json.loads(message))
             except Exception:
                 pass
-
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        u = usage or getattr(response, "usage", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(u, "completion_tokens", 0) or 0,
+        )
 
     def invoke(
         self, prompt: Optional[str], role: str = "user", images: Optional[List[Any]] = None,
@@ -173,16 +177,21 @@ class XAIAdapter(BaseModel):
         chat = self._create_chat(self._async_client, prompt, images, audio)
 
         accumulated = ""
+        last_response = None
         async for response, chunk in chat.stream():
             if abort and abort.is_set():
                 return
+            last_response = response
             for choice in chunk.choices:
                 piece = choice.content
                 if piece:
                     accumulated += piece
                     yield ResponseChunk(text=piece, is_final=False, function_call=None)
 
-        for tfc in parse_calls(response):
+        for tfc in parse_calls(last_response):
             yield ResponseChunk(text="", is_final=False, function_call=tfc)
 
-        yield ResponseChunk(text=accumulated, is_final=True, function_call=None)
+        u = getattr(last_response, "usage", None)
+        yield ResponseChunk(text=accumulated, is_final=True, function_call=None,
+                            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+                            output_tokens=getattr(u, "completion_tokens", 0) or 0)

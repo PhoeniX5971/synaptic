@@ -66,4 +66,9 @@ def response_mem(response) -> ResponseMem:
             for part in cand.content.parts:
                 if part.text:
                     message += part.text
-    return ResponseMem(message=message, created=created, tool_calls=calls)
+    um = getattr(response, "usage_metadata", None)
+    return ResponseMem(
+        message=message, created=created, tool_calls=calls,
+        input_tokens=getattr(um, "prompt_token_count", 0) or 0,
+        output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+    )

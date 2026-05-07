@@ -134,7 +134,12 @@ class UniversalLLMAdapter(BaseModel):
                         except json.JSONDecodeError:
                             args = {}
                         tool_calls.append(ToolCall(name=tc.function.name, args=args))
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        u = getattr(response, "usage", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(u, "completion_tokens", 0) or 0,
+        )
 
     async def astream(
         self, prompt: Optional[str], role: str = "user", audio: Optional[List[str]] = None,
@@ -151,6 +156,7 @@ class UniversalLLMAdapter(BaseModel):
             request_params["tools"] = self.openai_tools
             request_params["tool_choice"] = "auto"
 
+        request_params["stream_options"] = {"include_usage": True}
         accumulated_message = ""
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
 
@@ -173,6 +179,7 @@ class UniversalLLMAdapter(BaseModel):
                             pending_tool_calls[idx]["name"] += tc_delta.function.name
                         if tc_delta.function.arguments:
                             pending_tool_calls[idx]["args"] += tc_delta.function.arguments
+            u = getattr(stream, "usage", None)
 
         for idx in sorted(pending_tool_calls):
             tc = pending_tool_calls[idx]
@@ -182,4 +189,6 @@ class UniversalLLMAdapter(BaseModel):
                 args = {}
             yield ResponseChunk(text="", is_final=False, function_call=ToolCall(name=tc["name"], args=args))
 
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None,
+                            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+                            output_tokens=getattr(u, "completion_tokens", 0) or 0)

@@ -141,6 +141,7 @@ class VertexAdapter(BaseModel):
 
         accumulated_message = ""
         tool_calls: List[ToolCall] = []
+        usage_metadata = None
 
         while True:
             item = await q.get()
@@ -152,6 +153,8 @@ class VertexAdapter(BaseModel):
                 break
 
             response = item
+            if getattr(response, "usage_metadata", None):
+                usage_metadata = response.usage_metadata
             if not getattr(response, "candidates", None):
                 continue
 
@@ -167,8 +170,10 @@ class VertexAdapter(BaseModel):
                 for part in cand.content.parts:
                     if part.text:
                         accumulated_message += part.text
-                        yield ResponseChunk(
-                            text=part.text, is_final=False, function_call=None
-                        )
+                        yield ResponseChunk(text=part.text, is_final=False, function_call=None)
 
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        yield ResponseChunk(
+            text=accumulated_message, is_final=True, function_call=None,
+            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+        )
