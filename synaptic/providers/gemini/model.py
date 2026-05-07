@@ -171,7 +171,7 @@ class GeminiAdapter(BaseModel):
         accumulated_message = ""
         tool_calls: List[ToolCall] = []
 
-        async for response in self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
+        async for response in await self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
             model=self.model, contents=contents, config=config, **kwargs  # type: ignore[arg-type]
         ):
             if abort and abort.is_set():
