@@ -95,7 +95,12 @@ class OpenAIAdapter(BaseModel):
             choice = response.choices[0]
             message = choice.message.content or ""
             tool_calls = parse_tool_calls(choice.message)
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        u = getattr(response, "usage", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(u, "completion_tokens", 0) or 0,
+        )
 
     async def astream(
         self,
@@ -106,6 +111,7 @@ class OpenAIAdapter(BaseModel):
         **kwargs,
     ) -> AsyncIterator[ResponseChunk]:
         params = self._request(self._messages(prompt, role, audio), True, kwargs)
+        params["stream_options"] = {"include_usage": True}
         accumulated = ""
         pending: Dict[int, Dict[str, str]] = {}
 
@@ -125,7 +131,10 @@ class OpenAIAdapter(BaseModel):
                         current["name"] += tc_delta.function.name
                     if tc_delta.function.arguments:
                         current["args"] += tc_delta.function.arguments
+            u = getattr(stream, "usage", None)
 
         for call in stream_tool_calls(pending):
             yield ResponseChunk(text="", function_call=call)
-        yield ResponseChunk(text=accumulated, is_final=True)
+        yield ResponseChunk(text=accumulated, is_final=True,
+                            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+                            output_tokens=getattr(u, "completion_tokens", 0) or 0)

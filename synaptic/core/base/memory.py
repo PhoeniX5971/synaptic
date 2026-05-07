@@ -26,10 +26,14 @@ class ResponseMem(Memory):
         tool_calls: List[ToolCall] = None,
         tool_results: List = None,
         role: str = "assistant",
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ):
         super().__init__(message, created, role)
         self.tool_calls: List[ToolCall] = tool_calls or []
         self.tool_results: List = tool_results or []
+        self.input_tokens: int = input_tokens
+        self.output_tokens: int = output_tokens
 
     def list_tool_calls(self) -> List[str]:
         return [tc.name for tc in self.tool_calls]

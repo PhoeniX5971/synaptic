@@ -115,12 +115,16 @@ class ClaudeAdapter(BaseModel):
                 message += block.text
             elif block.type == "tool_use":
                 if block.name == _STRUCTURED_OUTPUT_TOOL:
-                    # Structured output: serialize the input dict as JSON string
                     message = json.dumps(block.input)
                 else:
                     tool_calls.append(ToolCall(name=block.name, args=block.input or {}))
 
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        usage = getattr(response, "usage", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+        )
 
     async def astream(
         self,
@@ -138,6 +142,8 @@ class ClaudeAdapter(BaseModel):
         active_tool_name: Optional[str] = None
         active_tool_json: str = ""
         is_structured_output_block = False
+        input_tokens = 0
+        output_tokens = 0
 
         async with self.async_client.messages.stream(**params) as stream:
             async for event in stream:
@@ -146,7 +152,15 @@ class ClaudeAdapter(BaseModel):
 
                 event_type = getattr(event, "type", None)
 
-                if event_type == "content_block_start":
+                if event_type == "message_start":
+                    u = getattr(getattr(event, "message", None), "usage", None)
+                    if u:
+                        input_tokens = getattr(u, "input_tokens", 0) or 0
+                elif event_type == "message_delta":
+                    u = getattr(event, "usage", None)
+                    if u:
+                        output_tokens = getattr(u, "output_tokens", 0) or 0
+                elif event_type == "content_block_start":
                     block = getattr(event, "content_block", None)
                     if block and getattr(block, "type", None) == "tool_use":
                         active_tool_name = block.name
@@ -180,4 +194,5 @@ class ClaudeAdapter(BaseModel):
                         active_tool_json = ""
                         is_structured_output_block = False
 
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None,
+                            input_tokens=input_tokens, output_tokens=output_tokens)

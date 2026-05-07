@@ -44,19 +44,13 @@ class GeminiAdapter(BaseModel):
         }
 
     def _invalidate_tools(self):
-        """Update Gemini-side tools without mutating synaptic tools."""
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic Tool objects + TOOL_REGISTRY to Gemini types.Tool objects."""
         self.gemini_tools = []
-
-        # Use a dict to deduplicate by name
         all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
-
-        for t_name, t in all_tools.items():
+        for t in all_tools.values():
             self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))  # type: ignore
-
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> list[types.Content]:
@@ -70,13 +64,8 @@ class GeminiAdapter(BaseModel):
         audio: Optional[List[str]] = None,
         **kwargs,
     ) -> ResponseMem:
-        config = types.GenerateContentConfig(
-            temperature=self.temperature,
-            tools=self.gemini_tools,
-        )
-
+        config = types.GenerateContentConfig(temperature=self.temperature, tools=self.gemini_tools)
         role = self.role_map.get(role, "user")
-
         contents = []
 
         if self.response_format == ResponseFormat.NONE:
@@ -135,7 +124,12 @@ class GeminiAdapter(BaseModel):
                             )
                         )
 
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        um = getattr(response, "usage_metadata", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(um, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+        )
 
     async def astream(
         self, prompt: Optional[str], role: str = "user", images: Optional[List[str]] = None,
@@ -170,15 +164,19 @@ class GeminiAdapter(BaseModel):
 
         accumulated_message = ""
         tool_calls: List[ToolCall] = []
+        usage_metadata = None
 
         async for response in await self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
             model=self.model, contents=contents, config=config, **kwargs  # type: ignore[arg-type]
         ):
             if abort and abort.is_set():
                 return
-            if not getattr(response, "candidates", None):
+            if getattr(response, "usage_metadata", None):
+                usage_metadata = response.usage_metadata
+            candidates = getattr(response, "candidates", None)
+            if not candidates:
                 continue
-            candidate = response.candidates[0]
+            candidate = candidates[0]
             if not candidate or not candidate.content or not candidate.content.parts:
                 continue
             for part in candidate.content.parts:
@@ -192,4 +190,8 @@ class GeminiAdapter(BaseModel):
                     tool_calls.append(tfc)
                     yield ResponseChunk(text="", is_final=False, function_call=tfc)
 
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None)
+        yield ResponseChunk(
+            text=accumulated_message, is_final=True, function_call=None,
+            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
+            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+        )

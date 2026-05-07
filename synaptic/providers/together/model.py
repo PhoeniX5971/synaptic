@@ -88,7 +88,12 @@ class TogetherAdapter(BaseModel):
                 message = json.dumps(json.loads(message))
             except Exception:
                 pass
-        return ResponseMem(message=message, created=created, tool_calls=tool_calls)
+        u = getattr(response, "usage", None)
+        return ResponseMem(
+            message=message, created=created, tool_calls=tool_calls,
+            input_tokens=getattr(u, "prompt_tokens", 0) or 0,
+            output_tokens=getattr(u, "completion_tokens", 0) or 0,
+        )
 
     async def astream(
         self,
@@ -117,6 +122,7 @@ class TogetherAdapter(BaseModel):
         threading.Thread(target=producer, daemon=True).start()
         accumulated = ""
         pending: Dict[int, Dict[str, str]] = {}
+        usage_chunk = None
 
         while True:
             item = await q.get()
@@ -126,6 +132,8 @@ class TogetherAdapter(BaseModel):
                 raise item
             if item is None:
                 break
+            if getattr(item, "usage", None):
+                usage_chunk = item.usage
             if not item.choices:
                 continue
             delta = item.choices[0].delta
@@ -141,4 +149,6 @@ class TogetherAdapter(BaseModel):
 
         for call in pending_calls(pending):
             yield ResponseChunk(text="", function_call=call)
-        yield ResponseChunk(text=accumulated, is_final=True)
+        yield ResponseChunk(text=accumulated, is_final=True,
+                            input_tokens=getattr(usage_chunk, "prompt_tokens", 0) or 0,
+                            output_tokens=getattr(usage_chunk, "completion_tokens", 0) or 0)
