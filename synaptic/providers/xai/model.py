@@ -58,20 +58,21 @@ class XAIAdapter(BaseModel):
         self.instructions = instructions
         self.tool_registry = tool_registry
 
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.xai_tools: List[chat_pb2.Tool] = []
 
         self._sync_client = SyncClient(api_key=self.api_key)
         self._async_client = AsyncClient(api_key=self.api_key)
 
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self) -> None:
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         self.xai_tools = [_make_xai_tool(t) for t in all_tools.values()]
         self.synaptic_tools = list(all_tools.values())
 

@@ -17,6 +17,9 @@ dependencies = [
 	"xai-sdk",
 ]
 
+[project.optional-dependencies]
+mcp = ["mcp"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

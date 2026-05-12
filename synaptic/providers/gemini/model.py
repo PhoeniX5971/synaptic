@@ -27,6 +27,7 @@ class GeminiAdapter(BaseModel):
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.gemini_tools: List[types.Tool] = []
         self.temperature = temperature
@@ -34,7 +35,7 @@ class GeminiAdapter(BaseModel):
         self.response_format = response_format
         self.response_schema = response_schema
         self.tool_registry = tool_registry
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
         self.instructions = instructions
         self.role_map = {
@@ -48,7 +49,7 @@ class GeminiAdapter(BaseModel):
 
     def _convert_tools(self) -> None:
         self.gemini_tools = []
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for t in all_tools.values():
             self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))  # type: ignore
         self.synaptic_tools = list(all_tools.values())

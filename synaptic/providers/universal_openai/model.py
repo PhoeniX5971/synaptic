@@ -30,6 +30,7 @@ class UniversalLLMAdapter(BaseModel):
         self.async_client = AsyncOpenAI(api_key=api_key or "none", base_url=base_url)
         self.model = model
         self.history = history
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.openai_tools: List[Dict] = []
         self.temperature = temperature
@@ -39,7 +40,7 @@ class UniversalLLMAdapter(BaseModel):
         self.tool_registry = tool_registry
         self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
 
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self):
@@ -47,7 +48,7 @@ class UniversalLLMAdapter(BaseModel):
 
     def _convert_tools(self) -> None:
         self.openai_tools = []
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for t_name, t in all_tools.items():
             self.openai_tools.append({"type": "function", "function": t.declaration})
         self.synaptic_tools = list(all_tools.values())
@@ -58,7 +59,7 @@ class UniversalLLMAdapter(BaseModel):
             contents.append({"role": "system", "content": self.instructions})
         if self.history is None:
             return contents
-        for memory in self.history.MemoryList:
+        for memory in self.history.effective_mems():
             if isinstance(memory, ResponseMem) and memory.tool_calls:
                 contents.append({
                     "role": "assistant", "content": memory.message or "",

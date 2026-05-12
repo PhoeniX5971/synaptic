@@ -111,6 +111,8 @@ class Model:
         if self.tools is None:
             self.tools = []
         self.tools += tools
+        if hasattr(self.llm, "bound_tools"):
+            self.llm.bound_tools = self.tools
         self.llm.synaptic_tools = self.tools
         self.llm._invalidate_tools()
 
