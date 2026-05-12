@@ -57,7 +57,7 @@ def history_messages(adapter) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     if adapter.history is None:
         return out
-    for memory in adapter.history.MemoryList:
+    for memory in adapter.history.effective_mems():
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             out.append({
                 "role": "assistant",

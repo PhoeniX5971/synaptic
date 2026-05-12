@@ -28,7 +28,7 @@ def history_messages(history, instructions: str, role_map: Dict[str, str]) -> Li
         messages.append({"role": "system", "content": instructions})
     if history is None:
         return messages
-    for memory in history.MemoryList:
+    for memory in history.effective_mems():
         msg: Dict[str, Any] = {
             "role": role_map.get(memory.role, "user"),
             "content": memory.message,
