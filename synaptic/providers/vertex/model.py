@@ -41,6 +41,7 @@ class VertexAdapter(BaseModel):
         self.model = GenerativeModel(model)
         self.temperature = temperature
         self.history = history
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.vertex_tools: List[Tool] = []
         self.instructions = instructions
@@ -54,7 +55,7 @@ class VertexAdapter(BaseModel):
             "system": "user",
         }
 
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self):
@@ -62,7 +63,7 @@ class VertexAdapter(BaseModel):
 
     def _convert_tools(self):
         """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         all_declarations: List[FunctionDeclaration] = []
 
         for _, tool in all_tools.items():

@@ -4,13 +4,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 class ToolRegistry:
-    """Collection of tools for one model, agent, session, or application.
-
-    Use a dedicated registry when tests, tenants, or concurrent agents should
-    not see each other's tools. Passing the registry to `Model` makes provider
-    adapters expose only tools from that registry plus tools bound directly to
-    the model.
-    """
+    """Collection of tools for one model, agent, session, or application."""
 
     def __init__(self) -> None:
         self._tools: Dict[str, "Tool"] = {}
@@ -19,15 +13,34 @@ class ToolRegistry:
     def register(self, tool: "Tool") -> None:
         """Add or replace a tool by name and notify adapter subscribers."""
         self._tools[tool.name] = tool
+        self._notify()
+
+    def register_many(self, tools: List["Tool"]) -> None:
+        for tool in tools:
+            self._tools[tool.name] = tool
+        if tools:
+            self._notify()
+
+    def unregister(self, name: str) -> None:
+        if name in self._tools:
+            del self._tools[name]
+            self._notify()
+
+    def unregister_prefix(self, prefix: str) -> None:
+        names = [name for name in self._tools if name.startswith(prefix)]
+        for name in names:
+            del self._tools[name]
+        if names:
+            self._notify()
+
+    def _notify(self) -> None:
         for cb in self._callbacks:
             cb()
 
     def on_change(self, fn: Callable[[], None]) -> None:
-        """Subscribe a no-argument callback fired after registration."""
         self._callbacks.append(fn)
 
     def all(self) -> Dict[str, "Tool"]:
-        """Return the registry's live name-to-tool mapping."""
         return self._tools
 
     def autotool(
@@ -36,7 +49,6 @@ class ToolRegistry:
         param_descriptions: Optional[Dict[str, str]] = None,
         default_params: Optional[dict] = None,
     ) -> Callable:
-        """Scoped version of @autotool that registers to this registry."""
         return autotool(
             description=description,
             param_descriptions=param_descriptions,
@@ -49,9 +61,9 @@ _default_registry = ToolRegistry()
 TOOL_REGISTRY: Dict[str, "Tool"] = _default_registry._tools
 
 
-def register_callback(fn: Callable[[], None]) -> None:
-    """Subscribe to changes on the process-wide default registry."""
-    _default_registry.on_change(fn)
+def register_callback(fn: Callable[[], None], registry: Optional[ToolRegistry] = None) -> None:
+    """Subscribe to changes on a registry, defaulting to the process-wide one."""
+    (registry or _default_registry).on_change(fn)
 
 
 def collect_tools(
@@ -70,11 +82,7 @@ def collect_tools(
 
 
 class Tool:
-    """Callable exposed to model providers through function/tool calling.
-
-    `declaration` is the provider-neutral JSON schema-ish object sent to
-    adapters. `function` may be sync or async; `run` is assigned accordingly.
-    """
+    """Callable exposed to model providers through function/tool calling."""
 
     def __init__(
         self,

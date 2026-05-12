@@ -5,6 +5,7 @@ from .core.base.memory import Memory, ResponseMem, UserMem, History, complete_to
 from .core.model import Model
 from .core.tool import Tool, ToolCall, ToolRegistry, autotool
 from .core.provider import Provider
+from .mcp import MCPHub, StdioMCPServer, HttpMCPServer
 
 from .providers import (
     ClaudeAdapter,

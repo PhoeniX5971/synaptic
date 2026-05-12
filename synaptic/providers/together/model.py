@@ -30,6 +30,7 @@ class TogetherAdapter(BaseModel):
         self.client = Together(api_key=api_key)
         self.model = model
         self.history = history
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.together_tools: List[Dict[str, Any]] = []
         self.temperature = temperature
@@ -38,7 +39,7 @@ class TogetherAdapter(BaseModel):
         self.instructions = instructions
         self.tool_registry = tool_registry
         self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self) -> None:
@@ -46,7 +47,7 @@ class TogetherAdapter(BaseModel):
 
     def _convert_tools(self) -> None:
         self.together_tools = []
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for tool in all_tools.values():
             self.together_tools.append({"type": "function", "function": tool.declaration})
         self.synaptic_tools = list(all_tools.values())

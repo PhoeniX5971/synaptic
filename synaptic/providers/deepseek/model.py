@@ -36,6 +36,7 @@ class DeepSeekAdapter(BaseModel):
         self.client = OpenAI(api_key=api_key, base_url=_BASE_URL)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=_BASE_URL)
         self.model = model
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.openai_tools: List[Dict] = []
         self.temperature = temperature
@@ -46,7 +47,7 @@ class DeepSeekAdapter(BaseModel):
         self.tool_registry = tool_registry
         self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
 
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self):
@@ -56,7 +57,7 @@ class DeepSeekAdapter(BaseModel):
         self.openai_tools = []
         if self.response_format != ResponseFormat.NONE:
             return
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for t_name, t in all_tools.items():
             self.openai_tools.append({"type": "function", "function": t.declaration})
         self.synaptic_tools = list(all_tools.values())
@@ -65,7 +66,7 @@ class DeepSeekAdapter(BaseModel):
         messages: list[ChatCompletionMessageParam] = []
         if self.instructions:
             messages.append(ChatCompletionSystemMessageParam(content=self.instructions, role="system"))
-        for memory in self.history.MemoryList:
+        for memory in self.history.effective_mems():
             if isinstance(memory, ResponseMem) and memory.tool_calls:
                 messages.append(ChatCompletionAssistantMessageParam(
                     role="assistant",

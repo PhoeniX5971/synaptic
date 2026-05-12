@@ -26,6 +26,7 @@ class OpenAIAdapter(BaseModel):
         self.async_client = AsyncOpenAI(api_key=api_key)
         self.model = model
         self.history = history
+        self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.openai_tools: List[Dict[str, Any]] = []
         self.temperature = temperature
@@ -34,7 +35,7 @@ class OpenAIAdapter(BaseModel):
         self.instructions = instructions
         self.tool_registry = tool_registry
         self.role_map = {"user": "user", "assistant": "assistant", "system": "system"}
-        register_callback(self._invalidate_tools)
+        register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self) -> None:
@@ -42,7 +43,7 @@ class OpenAIAdapter(BaseModel):
 
     def _convert_tools(self) -> None:
         self.openai_tools = []
-        all_tools = collect_tools(self.synaptic_tools, self.tool_registry)
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for tool in all_tools.values():
             self.openai_tools.append({"type": "function", "function": tool.declaration})
         self.synaptic_tools = list(all_tools.values())
