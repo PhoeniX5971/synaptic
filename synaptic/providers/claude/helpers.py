@@ -12,7 +12,7 @@ def history_messages(history) -> List[Dict[str, Any]]:
     messages: List[Dict[str, Any]] = []
     if history is None:
         return messages
-    for turn_idx, memory in enumerate(history.MemoryList):
+    for turn_idx, memory in enumerate(history.effective_mems()):
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             content: List[Dict[str, Any]] = []
             if memory.message:

@@ -1,5 +1,7 @@
+import copy
+import json
 import warnings
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from ..tool import ToolCall
 
@@ -70,10 +72,12 @@ class History:
         memoryList: Optional[List[Memory]] = None,
         size: int = 10,
         on_truncate: Optional[Callable[[List[Memory]], None]] = None,
+        dedup_tools: bool = False,
     ):
         self.MemoryList: List[Memory] = list(memoryList or [])
         self.size = size
         self.on_truncate = on_truncate
+        self.dedup_tools = dedup_tools
 
     def _size_update(self) -> None:
         excess = len(self.MemoryList) - self.size
@@ -98,6 +102,53 @@ class History:
     def add(self, memory: Memory) -> None:
         self.MemoryList.append(memory)
         self._size_update()
+
+    def effective_mems(self) -> List[Memory]:
+        """Return MemoryList, optionally with stale duplicate tool results pruned.
+
+        When dedup_tools=True, for each (tool_name, args) pair only the last
+        ResponseMem that contains it is kept. Stale calls (and their results)
+        are stripped; if that leaves a ResponseMem with no calls and no text it
+        is dropped entirely.
+        """
+        if not self.dedup_tools:
+            return self.MemoryList
+
+        def _key(call: ToolCall) -> str:
+            return f"{call.name}\x00{json.dumps(call.args, sort_keys=True, default=str)}"
+
+        # Forward pass: record the last index each (name, args) key appears at.
+        last: Dict[str, int] = {}
+        for i, mem in enumerate(self.MemoryList):
+            if isinstance(mem, ResponseMem) and mem.tool_calls:
+                for call in mem.tool_calls:
+                    last[_key(call)] = i
+
+        result: List[Memory] = []
+        for i, mem in enumerate(self.MemoryList):
+            if not (isinstance(mem, ResponseMem) and mem.tool_calls):
+                result.append(mem)
+                continue
+
+            fresh = [j for j, call in enumerate(mem.tool_calls) if last[_key(call)] == i]
+            if len(fresh) == len(mem.tool_calls):
+                result.append(mem)
+            elif fresh:
+                trimmed = copy.copy(mem)
+                trimmed.tool_calls = [mem.tool_calls[j] for j in fresh]
+                trimmed.tool_results = (
+                    [mem.tool_results[j] for j in fresh] if mem.tool_results else []
+                )
+                result.append(trimmed)
+            elif mem.message:
+                # All calls stale but there's still text — keep as a plain reply
+                trimmed = copy.copy(mem)
+                trimmed.tool_calls = []
+                trimmed.tool_results = []
+                result.append(trimmed)
+            # else: drop entirely — no text, no fresh calls
+
+        return result
 
 
 def complete_tool_call(

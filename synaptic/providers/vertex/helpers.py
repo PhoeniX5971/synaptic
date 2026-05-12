@@ -14,7 +14,7 @@ def history_contents(history, role_map) -> List[Content]:
     contents = []
     if history is None:
         return contents
-    for mem in history.MemoryList:
+    for mem in history.effective_mems():
         if isinstance(mem, ResponseMem) and mem.tool_calls:
             contents.append(Content(role="model", parts=[Part.from_text(mem.message or "")]))
             response_parts = []

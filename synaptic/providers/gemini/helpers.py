@@ -64,7 +64,7 @@ def history_contents(history, role_map) -> list[types.Content]:
     contents = []
     if history is None:
         return contents
-    for memory in history.MemoryList:
+    for memory in history.effective_mems():
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             parts: list[types.Part] = []
             if memory.message:

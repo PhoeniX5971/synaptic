@@ -38,7 +38,7 @@ def history_messages(history) -> List[chat_pb2.Message]:
     messages: List[chat_pb2.Message] = []
     if history is None:
         return messages
-    for idx, memory in enumerate(history.MemoryList):
+    for idx, memory in enumerate(history.effective_mems()):
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             calls = [
                 chat_pb2.ToolCall(
