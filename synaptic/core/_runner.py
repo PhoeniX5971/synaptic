@@ -128,7 +128,7 @@ async def astream(model, prompt: Optional[str], role: str = "user", images=None,
             return
         yield chunk
 
-        if getattr(chunk, "text", None):
+        if getattr(chunk, "text", None) and not chunk.is_final:
             accumulated += chunk.text
 
         if getattr(chunk, "function_call", None):
