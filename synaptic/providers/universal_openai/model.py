@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import AsyncOpenAI, OpenAI
 
-from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
+from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem, ToolCallArgsDelta
 from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
 
 
@@ -180,6 +180,8 @@ class UniversalLLMAdapter(BaseModel):
                             pending_tool_calls[idx]["name"] += tc_delta.function.name
                         if tc_delta.function.arguments:
                             pending_tool_calls[idx]["args"] += tc_delta.function.arguments
+                            if pending_tool_calls[idx]["name"]:
+                                yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(pending_tool_calls[idx]["name"], tc_delta.function.arguments, pending_tool_calls[idx]["args"]))
             u = getattr(stream, "usage", None)
 
         for idx in sorted(pending_tool_calls):

@@ -3,7 +3,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 
 from openai import AsyncOpenAI, OpenAI
 
-from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
+from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem, ToolCallArgsDelta
 from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
 from .helpers import add_prompt, history_messages, parse_tool_calls, stream_tool_calls
 
@@ -132,6 +132,8 @@ class OpenAIAdapter(BaseModel):
                         current["name"] += tc_delta.function.name
                     if tc_delta.function.arguments:
                         current["args"] += tc_delta.function.arguments
+                        if current["name"]:
+                            yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(current["name"], tc_delta.function.arguments, current["args"]))
             u = getattr(stream, "usage", None)
 
         for call in stream_tool_calls(pending):

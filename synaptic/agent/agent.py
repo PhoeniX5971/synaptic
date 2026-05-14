@@ -6,6 +6,8 @@ from ..core._runner import run_tools_async, run_tools_sync
 from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
 from ..core.tool import ToolCall
+from ..signal.collector import SignalMode, collect as _signal_collect, needs_text_mode
+from ..signal.events import ToolCallResult as _SignalTCR
 from .events import EventBus
 from .session import Session
 
@@ -27,12 +29,19 @@ class Agent:
         max_turns: int = 10,
         permission: Optional[Permission] = None,
         events: Optional[EventBus] = None,
+        signals: Optional[EventBus] = None,
+        signal_mode: SignalMode = SignalMode.NONE,
     ) -> None:
         self.model = model
         self.session = session or Session()
         self.max_turns = max_turns
         self.permission = permission
         self.events = events or EventBus()
+        self.signals = signals
+        self._text_mode = needs_text_mode(model.provider, signal_mode)
+        if self._text_mode and signals:
+            from ..signal.dsl import inject_instructions
+            inject_instructions(model)
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
@@ -90,6 +99,8 @@ class Agent:
             else:
                 result = (await run_tools_async(self.model.llm.synaptic_tools, self.model.blacklist, [call]))[0]
             await self.events.aemit("tool_end", call, result)
+            if self.signals:
+                await self.signals.aemit("ToolCallResult", _SignalTCR(call=call, result=result))
             results.append(result)
         return results
 
@@ -151,12 +162,12 @@ class Agent:
                 tool_calls: List[ToolCall] = []
                 created = datetime.now().astimezone(timezone.utc)
 
-                async for chunk in self.model.llm.astream(
-                    prompt=next_prompt, role=role, abort=abort, **kwargs
-                ):
+                _s = self.model.llm.astream(prompt=next_prompt, role=role, abort=abort, **kwargs)
+                if self.signals:
+                    _s = _signal_collect(_s, self.signals, self._text_mode)
+                async for chunk in _s:
                     if abort and abort.is_set():
                         return
-                    # Accumulate non-final text deltas; skip the final summary chunk
                     if not chunk.is_final and chunk.text:
                         accumulated += chunk.text
                         await self.events.aemit("text_delta", chunk.text)
