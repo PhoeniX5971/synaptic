@@ -31,6 +31,8 @@ class ToolCallResult:
 class TurnComplete:
     message: str
     tool_calls: List[ToolCall]
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 # ToolCallArgsDelta is re-exported from core — it doubles as a signal event.
