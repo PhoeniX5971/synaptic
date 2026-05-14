@@ -82,7 +82,10 @@ async def collect(
                     await _fire(type(evt).__name__, evt)
                     if isinstance(evt, TextDelta):
                         accumulated += evt.text
-                await _fire("TurnComplete", TurnComplete(message=accumulated, tool_calls=tool_calls))
+                await _fire("TurnComplete", TurnComplete(
+                    message=accumulated, tool_calls=tool_calls,
+                    input_tokens=chunk.input_tokens, output_tokens=chunk.output_tokens,
+                ))
                 yield ResponseChunk(text=accumulated, is_final=True,
                                     input_tokens=chunk.input_tokens,
                                     output_tokens=chunk.output_tokens)
@@ -108,6 +111,9 @@ async def collect(
                 await _fire("TextDelta", TextDelta(text=chunk.text))
 
             if chunk.is_final:
-                await _fire("TurnComplete", TurnComplete(message=accumulated, tool_calls=tool_calls))
+                await _fire("TurnComplete", TurnComplete(
+                    message=accumulated, tool_calls=tool_calls,
+                    input_tokens=chunk.input_tokens, output_tokens=chunk.output_tokens,
+                ))
 
         yield chunk
