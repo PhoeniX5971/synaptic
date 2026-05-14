@@ -36,10 +36,8 @@ NATIVE_SIGNAL_PROVIDERS: Set[Provider] = {
 
 
 def needs_text_mode(provider: Provider, mode: SignalMode) -> bool:
-    if mode == SignalMode.TEXT:
+    if mode in (SignalMode.TEXT, SignalMode.AUTO):
         return True
-    if mode == SignalMode.AUTO:
-        return provider in _NON_NATIVE
     return False
 
 
