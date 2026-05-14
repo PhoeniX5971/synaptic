@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 import anthropic
 from dotenv import load_dotenv
 
-from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
+from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem, ToolCallArgsDelta
 from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
 from .helpers import history_messages, safe_json, schema_for
 
@@ -49,7 +49,6 @@ class ClaudeAdapter(BaseModel):
         self._convert_tools()
 
     def _convert_tools(self) -> None:
-        """Convert synaptic Tool objects + TOOL_REGISTRY to Anthropic tool dicts."""
         all_tools = collect_tools(self.bound_tools, self.tool_registry)
 
         self.claude_tools = [
@@ -66,7 +65,6 @@ class ClaudeAdapter(BaseModel):
         return history_messages(self.history)
 
     def _build_request(self, prompt: Optional[str], role: str, **kwargs) -> Dict[str, Any]:
-        """Build the Anthropic messages.create request params."""
         messages = self.to_contents()
         if prompt is not None:
             messages.append({"role": role, "content": prompt})
@@ -174,11 +172,12 @@ class ClaudeAdapter(BaseModel):
                         continue
                     delta_type = getattr(delta, "type", None)
                     if delta_type == "text_delta":
-                        piece = delta.text
-                        accumulated_message += piece
-                        yield ResponseChunk(text=piece, is_final=False, function_call=None)
+                        accumulated_message += delta.text
+                        yield ResponseChunk(text=delta.text, is_final=False, function_call=None)
                     elif delta_type == "input_json_delta":
                         active_tool_json += delta.partial_json
+                        if not is_structured_output_block and active_tool_name:
+                            yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(active_tool_name, delta.partial_json, active_tool_json))
 
                 elif event_type == "content_block_stop":
                     if active_tool_name is not None:
