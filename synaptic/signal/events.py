@@ -56,6 +56,18 @@ class BlockDone:
     attrs: Dict[str, str] = field(default_factory=dict)
 
 
+class Event:
+    TextDelta         = "TextDelta"
+    ToolCallStarted   = "ToolCallStarted"
+    ToolCallArgsDelta = "ToolCallArgsDelta"
+    ToolCallDone      = "ToolCallDone"
+    ToolCallResult    = "ToolCallResult"
+    TurnComplete      = "TurnComplete"
+    BlockStarted      = "BlockStarted"
+    BlockDelta        = "BlockDelta"
+    BlockDone         = "BlockDone"
+
+
 # ToolCallArgsDelta is re-exported from core — it doubles as a signal event.
 __all__ = [
     "TextDelta",
@@ -68,6 +80,7 @@ __all__ = [
     "BlockDelta",
     "BlockDone",
     "SignalEvent",
+    "Event",
 ]
 
 SignalEvent = Union[
