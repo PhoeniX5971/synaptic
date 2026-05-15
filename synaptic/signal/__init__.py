@@ -6,6 +6,9 @@ from .events import (
     ToolCallDone,
     ToolCallResult,
     TurnComplete,
+    BlockStarted,
+    BlockDelta,
+    BlockDone,
 )
 from ..core.base.base_model import ToolCallArgsDelta
 from .dsl import inject_instructions, DSLParser

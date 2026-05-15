@@ -14,6 +14,9 @@ from .signal import (
     ToolCallDone,
     ToolCallResult,
     TurnComplete,
+    BlockStarted,
+    BlockDelta,
+    BlockDone,
 )
 
 from .providers import (

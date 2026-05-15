@@ -45,17 +45,15 @@ async def collect(
     source: AsyncIterator[ResponseChunk],
     bus: EventBus,
     text_mode: bool = False,
+    parser: Optional[DSLParser] = None,
 ) -> AsyncIterator[ResponseChunk]:
-    """Pass-through stream that fires SignalEvents on `bus` as side effects.
-
-    Yields the original ResponseChunks unchanged (native mode) or yields
-    derived chunks with DSL tool calls synthesised as function_call chunks
-    (text mode). In both cases the Agent loop sees standard ResponseChunks.
-    """
     announced: Set[str] = set()
     accumulated = ""
     tool_calls: List[ToolCall] = []
-    dsl = DSLParser() if text_mode else None
+    dsl: Optional[DSLParser] = None
+    if text_mode:
+        dsl = parser or DSLParser()
+        dsl.reset()
 
     async def _fire(event_type: str, payload) -> None:
         await bus.aemit(event_type, payload)

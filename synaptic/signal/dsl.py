@@ -1,47 +1,76 @@
 import json
-from typing import List
+import re
+from typing import Callable, Dict, List, Optional
 
 from ..core.base.base_model import ToolCallArgsDelta
 from ..core.tool import ToolCall
-from .events import SignalEvent, TextDelta, ToolCallDone, ToolCallStarted
-
-_OPEN = '<tool name="'
-_OPEN_END = '">'
-_CLOSE = "</tool>"
+from .events import (
+    BlockDelta, BlockDone, BlockStarted,
+    SignalEvent, TextDelta, ToolCallDone, ToolCallStarted,
+)
 
 _DSL_FRAGMENT = """
-## Streaming Tool Protocol
-When calling tools, use this streaming text format to enable live previews:
-<tool name="TOOL_NAME">
-{"arg": "value"}
-</tool>
-Replace TOOL_NAME with the tool name and provide a JSON object as arguments.
-Prefer this format over native function calls when streaming responses.
+## Output Protocol
+Always wrap your output in blocks. Never output bare text.
+- Plain responses: <message>your text here</message>
+- Tool calls: <tool name="TOOL_NAME">{"arg": "value"}</tool>
 """
+
+_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
 def inject_instructions(model, tools) -> None:
-    """Append DSL tool-call instructions + tool schemas to model.instructions."""
     lines = [
         f"- {t.declaration['name']}({', '.join(t.declaration.get('parameters', {}).get('properties', {}))})"
         f": {t.declaration.get('description', '')}"
         for t in tools
     ]
-    model.instructions = (model.instructions or "") + _DSL_FRAGMENT + "\nAvailable tools:\n" + "\n".join(lines)
+    suffix = "\nAvailable tools:\n" + "\n".join(lines) if lines else ""
+    model.instructions = (model.instructions or "") + _DSL_FRAGMENT + suffix
+
+
+def _tool_handler(evt: SignalEvent) -> List[SignalEvent]:
+    if isinstance(evt, BlockStarted):
+        return [ToolCallStarted(name=evt.attrs.get("name", ""))]
+    if isinstance(evt, BlockDelta):
+        return [ToolCallArgsDelta(evt.attrs.get("name", ""), evt.delta, evt.snapshot)]
+    if isinstance(evt, BlockDone):
+        try:
+            args = json.loads(evt.content.strip())
+        except (json.JSONDecodeError, ValueError):
+            args = {}
+        return [ToolCallDone(call=ToolCall(name=evt.attrs.get("name", ""), args=args))]
+    return []
+
+
+def _message_handler(evt: SignalEvent) -> List[SignalEvent]:
+    if isinstance(evt, BlockDelta):
+        return [TextDelta(text=evt.delta)]
+    return []
 
 
 class DSLParser:
-    """Incremental state-machine parser for the synaptic text DSL.
-
-    Feed text deltas via push(); each call returns any SignalEvents produced.
-    Call flush() at end of stream to drain buffered plain text.
-    """
-
     def __init__(self) -> None:
+        self._handlers: Dict[str, Optional[Callable]] = {
+            "tool": _tool_handler,
+            "message": _message_handler,
+        }
+        self.reset()
+
+    def reset(self) -> None:
         self._buf = ""
-        self._state = "normal"   # normal | tag_open | in_args
-        self._tool_name = ""
+        self._state = "normal"
+        self._block_name = ""
+        self._attrs: Dict[str, str] = {}
         self._snapshot = ""
+        self._close = ""
+
+    def register(self, name: str, handler: Optional[Callable] = None) -> None:
+        self._handlers[name] = handler
+
+    def _handle(self, evt: SignalEvent) -> List[SignalEvent]:
+        h = self._handlers.get(getattr(evt, "type", ""))
+        return h(evt) if h else []
 
     def push(self, delta: str) -> List[SignalEvent]:
         events: List[SignalEvent] = []
@@ -49,56 +78,56 @@ class DSLParser:
 
         while True:
             if self._state == "normal":
-                idx = self._buf.find(_OPEN)
+                idx = self._buf.find("<")
                 if idx == -1:
-                    safe = max(0, len(self._buf) - len(_OPEN) + 1)
-                    if safe:
-                        events.append(TextDelta(text=self._buf[:safe]))
-                        self._buf = self._buf[safe:]
+                    self._buf = self._buf[-1:] if self._buf else ""
                     break
-                if idx:
-                    events.append(TextDelta(text=self._buf[:idx]))
-                self._buf = self._buf[idx + len(_OPEN):]
+                self._buf = self._buf[idx + 1:]
                 self._state = "tag_open"
 
             elif self._state == "tag_open":
-                idx = self._buf.find(_OPEN_END)
+                idx = self._buf.find(">")
                 if idx == -1:
                     break
-                self._tool_name = self._buf[:idx]
-                self._buf = self._buf[idx + len(_OPEN_END):]
+                tag_str = self._buf[:idx]
+                self._buf = self._buf[idx + 1:]
+                parts = tag_str.split(None, 1)
+                self._block_name = parts[0]
+                self._attrs = dict(_ATTR_RE.findall(parts[1] if len(parts) > 1 else ""))
+                self._close = f"</{self._block_name}>"
                 self._snapshot = ""
-                self._state = "in_args"
-                events.append(ToolCallStarted(name=self._tool_name))
+                self._state = "in_block"
+                evt = BlockStarted(type=self._block_name, attrs=self._attrs)
+                events.append(evt)
+                events.extend(self._handle(evt))
 
-            elif self._state == "in_args":
-                idx = self._buf.find(_CLOSE)
+            elif self._state == "in_block":
+                idx = self._buf.find(self._close)
                 if idx == -1:
-                    safe = max(0, len(self._buf) - len(_CLOSE) + 1)
+                    safe = max(0, len(self._buf) - len(self._close) + 1)
                     if safe:
                         emit = self._buf[:safe]
                         self._snapshot += emit
-                        events.append(ToolCallArgsDelta(self._tool_name, emit, self._snapshot))
+                        evt = BlockDelta(type=self._block_name, delta=emit, snapshot=self._snapshot, attrs=self._attrs)
+                        events.append(evt)
+                        events.extend(self._handle(evt))
                         self._buf = self._buf[safe:]
                     break
                 chunk = self._buf[:idx]
                 if chunk:
                     self._snapshot += chunk
-                    events.append(ToolCallArgsDelta(self._tool_name, chunk, self._snapshot))
-                try:
-                    args = json.loads(self._snapshot.strip())
-                except (json.JSONDecodeError, ValueError):
-                    args = {}
-                events.append(ToolCallDone(call=ToolCall(name=self._tool_name, args=args)))
-                self._buf = self._buf[idx + len(_CLOSE):]
-                self._tool_name = self._snapshot = ""
+                    evt = BlockDelta(type=self._block_name, delta=chunk, snapshot=self._snapshot, attrs=self._attrs)
+                    events.append(evt)
+                    events.extend(self._handle(evt))
+                evt = BlockDone(type=self._block_name, content=self._snapshot, attrs=self._attrs)
+                events.append(evt)
+                events.extend(self._handle(evt))
+                self._buf = self._buf[idx + len(self._close):]
+                self._block_name = self._snapshot = self._close = ""
+                self._attrs = {}
                 self._state = "normal"
 
         return events
 
     def flush(self) -> List[SignalEvent]:
-        events: List[SignalEvent] = []
-        if self._buf and self._state == "normal":
-            events.append(TextDelta(text=self._buf))
-            self._buf = ""
-        return events
+        return []
