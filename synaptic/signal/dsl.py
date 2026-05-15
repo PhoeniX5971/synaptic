@@ -74,10 +74,12 @@ class DSLParser:
             elif self._state == "in_args":
                 idx = self._buf.find(_CLOSE)
                 if idx == -1:
-                    if self._buf:
-                        self._snapshot += self._buf
-                        events.append(ToolCallArgsDelta(self._tool_name, self._buf, self._snapshot))
-                        self._buf = ""
+                    safe = max(0, len(self._buf) - len(_CLOSE) + 1)
+                    if safe:
+                        emit = self._buf[:safe]
+                        self._snapshot += emit
+                        events.append(ToolCallArgsDelta(self._tool_name, emit, self._snapshot))
+                        self._buf = self._buf[safe:]
                     break
                 chunk = self._buf[:idx]
                 if chunk:
