@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Any, List, Optional, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.base.base_model import ToolCallArgsDelta
 from ..core.tool import ToolCall
@@ -35,6 +35,27 @@ class TurnComplete:
     output_tokens: int = 0
 
 
+@dataclass
+class BlockStarted:
+    type: str
+    attrs: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class BlockDelta:
+    type: str
+    delta: str
+    snapshot: str
+    attrs: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class BlockDone:
+    type: str
+    content: str
+    attrs: Dict[str, str] = field(default_factory=dict)
+
+
 # ToolCallArgsDelta is re-exported from core — it doubles as a signal event.
 __all__ = [
     "TextDelta",
@@ -43,6 +64,9 @@ __all__ = [
     "ToolCallDone",
     "ToolCallResult",
     "TurnComplete",
+    "BlockStarted",
+    "BlockDelta",
+    "BlockDone",
     "SignalEvent",
 ]
 
@@ -53,4 +77,7 @@ SignalEvent = Union[
     ToolCallDone,
     ToolCallResult,
     TurnComplete,
+    BlockStarted,
+    BlockDelta,
+    BlockDone,
 ]

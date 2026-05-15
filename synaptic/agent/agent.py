@@ -15,13 +15,6 @@ Permission = Callable[[str, dict], bool]
 
 
 class Agent:
-    """Multi-turn agentic loop built on top of `Model`.
-
-    Loops until the model returns no tool calls or `max_turns` is hit.
-    Every streaming turn yields chunks character-by-character; tool results
-    are written back into history and the next turn continues with prompt=None.
-    """
-
     def __init__(
         self,
         model: Model,
@@ -40,8 +33,10 @@ class Agent:
         self.events = events or EventBus()
         self.signals = signals
         self._text_mode = needs_text_mode(model.provider, signal_mode)
+        self._dsl_parser = None
         if self._text_mode:
-            from ..signal.dsl import inject_instructions
+            from ..signal.dsl import DSLParser, inject_instructions
+            self._dsl_parser = DSLParser()
             inject_instructions(model, tools or [])
             self._tools: List[Tool] = tools or []
         else:
@@ -51,8 +46,12 @@ class Agent:
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
-        """Subscribe to `text_delta`, `tool_start`, `tool_end`, or `step_end`."""
         self.events.on(event, fn)
+
+    def register_block(self, name: str, handler=None) -> None:
+        if self._dsl_parser is None:
+            raise RuntimeError("register_block requires signal mode")
+        self._dsl_parser.register(name, handler)
 
     def _start(self) -> None:
         if self.session.state == "running":
@@ -170,7 +169,7 @@ class Agent:
 
                 _s = self.model.llm.astream(prompt=next_prompt, role=role, abort=abort, **kwargs)
                 if self.signals:
-                    _s = _signal_collect(_s, self.signals, self._text_mode)
+                    _s = _signal_collect(_s, self.signals, self._text_mode, self._dsl_parser)
                 async for chunk in _s:
                     if abort and abort.is_set():
                         return
