@@ -9,6 +9,7 @@ from .mcp import MCPHub, StdioMCPServer, HttpMCPServer
 from .signal import (
     SignalMode,
     SignalEvent,
+    Event,
     TextDelta,
     ToolCallStarted,
     ToolCallDone,

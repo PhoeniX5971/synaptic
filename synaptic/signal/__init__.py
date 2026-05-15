@@ -1,6 +1,7 @@
 from .collector import SignalMode, collect, needs_text_mode, NATIVE_SIGNAL_PROVIDERS
 from .events import (
     SignalEvent,
+    Event,
     TextDelta,
     ToolCallStarted,
     ToolCallDone,
