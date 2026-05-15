@@ -20,12 +20,8 @@ Prefer this format over native function calls when streaming responses.
 """
 
 
-def inject_instructions(model) -> None:
-    """Append DSL tool-call instructions + available tool schemas to model.instructions.
-
-    Call once at Agent construction for TEXT/AUTO signal mode on non-native providers.
-    """
-    tools = model.llm.synaptic_tools
+def inject_instructions(model, tools) -> None:
+    """Append DSL tool-call instructions + tool schemas to model.instructions."""
     lines = [
         f"- {t.declaration['name']}({', '.join(t.declaration.get('parameters', {}).get('properties', {}))})"
         f": {t.declaration.get('description', '')}"

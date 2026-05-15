@@ -5,7 +5,7 @@ from typing import Any, AsyncIterator, Callable, List, Optional
 from ..core._runner import run_tools_async, run_tools_sync
 from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
-from ..core.tool import ToolCall
+from ..core.tool import Tool, ToolCall
 from ..signal.collector import SignalMode, collect as _signal_collect, needs_text_mode
 from ..signal.events import ToolCallResult as _SignalTCR
 from .events import EventBus
@@ -25,6 +25,7 @@ class Agent:
     def __init__(
         self,
         model: Model,
+        tools: Optional[List[Tool]] = None,
         session: Optional[Session] = None,
         max_turns: int = 10,
         permission: Optional[Permission] = None,
@@ -39,9 +40,14 @@ class Agent:
         self.events = events or EventBus()
         self.signals = signals
         self._text_mode = needs_text_mode(model.provider, signal_mode)
-        if self._text_mode and signals:
+        if self._text_mode:
             from ..signal.dsl import inject_instructions
-            inject_instructions(model)
+            inject_instructions(model, tools or [])
+            self._tools: List[Tool] = tools or []
+        else:
+            if tools:
+                model.bind_tools(tools)
+            self._tools = model.llm.synaptic_tools
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
@@ -85,7 +91,7 @@ class Agent:
             if not self._allow(call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
-                result = run_tools_sync(self.model.llm.synaptic_tools, self.model.blacklist, [call])[0]
+                result = run_tools_sync(self._tools, self.model.blacklist, [call])[0]
             self.events.emit("tool_end", call, result)
             results.append(result)
         return results
@@ -97,7 +103,7 @@ class Agent:
             if not await self._aallow(call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
-                result = (await run_tools_async(self.model.llm.synaptic_tools, self.model.blacklist, [call]))[0]
+                result = (await run_tools_async(self._tools, self.model.blacklist, [call]))[0]
             await self.events.aemit("tool_end", call, result)
             if self.signals:
                 await self.signals.aemit("ToolCallResult", _SignalTCR(call=call, result=result))
