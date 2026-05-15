@@ -151,38 +151,38 @@ class UniversalLLMAdapter(BaseModel):
 
         request_params: Dict[str, Any] = {
             "model": self.model, "messages": messages, "temperature": self.temperature,
-            "stream": True, **kwargs,
+            "stream": True, "stream_options": {"include_usage": True}, **kwargs,
         }
         if self.openai_tools and self.response_format == ResponseFormat.NONE:
             request_params["tools"] = self.openai_tools
             request_params["tool_choice"] = "auto"
 
-        request_params["stream_options"] = {"include_usage": True}
         accumulated_message = ""
         pending_tool_calls: Dict[int, Dict[str, str]] = {}
+        u = None
 
-        async with self.async_client.chat.completions.stream(**request_params) as stream:
-            async for chunk in stream:
-                if abort and abort.is_set():
-                    return
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if delta.content:
-                    accumulated_message += delta.content
-                    yield ResponseChunk(text=delta.content, is_final=False, function_call=None)
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in pending_tool_calls:
-                            pending_tool_calls[idx] = {"name": "", "args": ""}
-                        if tc_delta.function.name:
-                            pending_tool_calls[idx]["name"] += tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            pending_tool_calls[idx]["args"] += tc_delta.function.arguments
-                            if pending_tool_calls[idx]["name"]:
-                                yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(pending_tool_calls[idx]["name"], tc_delta.function.arguments, pending_tool_calls[idx]["args"]))
-            u = getattr(stream, "usage", None)
+        async for chunk in await self.async_client.chat.completions.create(**request_params):
+            if abort and abort.is_set():
+                return
+            if getattr(chunk, "usage", None):
+                u = chunk.usage
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta.content:
+                accumulated_message += delta.content
+                yield ResponseChunk(text=delta.content, is_final=False, function_call=None)
+            if delta.tool_calls:
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in pending_tool_calls:
+                        pending_tool_calls[idx] = {"name": "", "args": ""}
+                    if tc_delta.function.name:
+                        pending_tool_calls[idx]["name"] += tc_delta.function.name
+                    if tc_delta.function.arguments:
+                        pending_tool_calls[idx]["args"] += tc_delta.function.arguments
+                        if pending_tool_calls[idx]["name"]:
+                            yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(pending_tool_calls[idx]["name"], tc_delta.function.arguments, pending_tool_calls[idx]["args"]))
 
         for idx in sorted(pending_tool_calls):
             tc = pending_tool_calls[idx]
