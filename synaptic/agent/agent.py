@@ -5,8 +5,9 @@ from typing import Any, AsyncIterator, Callable, List, Optional
 from ..core._runner import run_tools_async, run_tools_sync
 from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
-from ..core.tool import Tool, ToolCall
+from ..core.tool import Tool, ToolCall, ToolRegistry
 from ..signal.collector import SignalMode, collect as _signal_collect, needs_text_mode
+from ..signal.dsl import DSLParser, build_dsl_instructions
 from ..signal.events import ToolCallResult as _SignalTCR
 from .events import EventBus
 from .session import Session
@@ -19,6 +20,7 @@ class Agent:
         self,
         model: Model,
         tools: Optional[List[Tool]] = None,
+        tool_registry: Optional[ToolRegistry] = None,
         session: Optional[Session] = None,
         max_turns: int = 10,
         permission: Optional[Permission] = None,
@@ -32,17 +34,17 @@ class Agent:
         self.permission = permission
         self.events = events or EventBus()
         self.signals = signals
+        self._registry = tool_registry or ToolRegistry()
+        for t in (tools or []):
+            self._registry.register(t)
+        self._base_instructions = model.instructions or ""
         self._text_mode = needs_text_mode(model.provider, signal_mode)
         self._dsl_parser = None
         if self._text_mode:
-            from ..signal.dsl import DSLParser, inject_instructions
             self._dsl_parser = DSLParser()
-            inject_instructions(model, tools or [])
-            self._tools: List[Tool] = tools or []
+            model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
         else:
-            if tools:
-                model.bind_tools(tools)
-            self._tools = model.llm.synaptic_tools
+            model.bind_tools(list(self._registry.all().values()))
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
@@ -90,7 +92,7 @@ class Agent:
             if not self._allow(call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
-                result = run_tools_sync(self._tools, self.model.blacklist, [call])[0]
+                result = run_tools_sync(list(self._registry.all().values()), self.model.blacklist, [call])[0]
             self.events.emit("tool_end", call, result)
             results.append(result)
         return results
@@ -102,7 +104,7 @@ class Agent:
             if not await self._aallow(call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
-                result = (await run_tools_async(self._tools, self.model.blacklist, [call]))[0]
+                result = (await run_tools_async(list(self._registry.all().values()), self.model.blacklist, [call]))[0]
             await self.events.aemit("tool_end", call, result)
             if self.signals:
                 await self.signals.aemit("ToolCallResult", _SignalTCR(call=call, result=result))
@@ -110,7 +112,6 @@ class Agent:
         return results
 
     def run(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
-        """Run the agent loop synchronously until completion."""
         self._start()
         try:
             next_prompt = prompt
@@ -167,6 +168,8 @@ class Agent:
                 tool_calls: List[ToolCall] = []
                 created = datetime.now().astimezone(timezone.utc)
 
+                if self._text_mode:
+                    self.model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
                 _s = self.model.llm.astream(prompt=next_prompt, role=role, abort=abort, **kwargs)
                 if self.signals:
                     _s = _signal_collect(_s, self.signals, self._text_mode, self._dsl_parser)

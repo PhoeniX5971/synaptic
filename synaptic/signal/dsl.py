@@ -19,14 +19,18 @@ Always wrap your output in blocks. Never output bare text.
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
-def inject_instructions(model, tools) -> None:
+def build_dsl_instructions(tools) -> str:
     lines = [
         f"- {t.declaration['name']}({', '.join(t.declaration.get('parameters', {}).get('properties', {}))})"
         f": {t.declaration.get('description', '')}"
         for t in tools
     ]
     suffix = "\nAvailable tools:\n" + "\n".join(lines) if lines else ""
-    model.instructions = (model.instructions or "") + _DSL_FRAGMENT + suffix
+    return _DSL_FRAGMENT + suffix
+
+
+def inject_instructions(model, tools) -> None:
+    model.instructions = (model.instructions or "") + build_dsl_instructions(tools)
 
 
 def _tool_handler(evt: SignalEvent) -> List[SignalEvent]:
