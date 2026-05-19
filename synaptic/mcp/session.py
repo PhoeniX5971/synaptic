@@ -36,10 +36,14 @@ class MCPSession:
 
     async def close(self) -> None:
         if self._stack is not None:
-            await self._stack.aclose()
-        self.session = None
-        self._stack = None
-        self._tools = None
+            try:
+                await self._stack.aclose()
+            except RuntimeError:
+                pass
+            finally:
+                self.session = None
+                self._stack = None
+                self._tools = None
 
     async def _connect_stdio(self) -> None:
         from mcp import ClientSession, StdioServerParameters
