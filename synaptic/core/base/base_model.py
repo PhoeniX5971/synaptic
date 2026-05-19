@@ -30,6 +30,7 @@ class ResponseChunk:
     finish_reason: Optional[str] = None   # "stop" | "tool_calls" | "max_tokens"
     input_tokens: int = 0
     output_tokens: int = 0
+    final: bool = False
 
 
 class BaseModel(ABC):
