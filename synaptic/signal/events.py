@@ -33,6 +33,7 @@ class TurnComplete:
     tool_calls: List[ToolCall]
     input_tokens: int = 0
     output_tokens: int = 0
+    final: bool = False
 
 
 @dataclass

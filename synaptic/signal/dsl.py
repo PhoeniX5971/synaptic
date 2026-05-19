@@ -1,5 +1,6 @@
 import json
 import re
+import warnings
 from typing import Callable, Dict, List, Optional
 
 from ..core.base.base_model import ToolCallArgsDelta
@@ -12,8 +13,12 @@ from .events import (
 _DSL_FRAGMENT = """
 ## Output Protocol
 Always wrap your output in blocks. Never output bare text.
-- Plain responses: <message>your text here</message>
+- Progress/commentary: <message>your text here</message>
 - Tool calls: <tool name="TOOL_NAME">{"arg": "value"}</tool>
+- All work complete: <final></final>
+- Quote DSL syntax verbatim: <literal>text with <tags> inside</literal>
+If you intend to perform a tool action, you MUST emit the <tool> block. Narrating in <message> does not replace it.
+When all tasks are done, emit <final></final>. Do not omit it.
 """
 
 _ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
@@ -42,6 +47,7 @@ def _tool_handler(evt: SignalEvent) -> List[SignalEvent]:
         try:
             args = json.loads(evt.content.strip())
         except (json.JSONDecodeError, ValueError):
+            warnings.warn(f"DSL: invalid JSON in <tool name=\"{evt.attrs.get('name', '')}\">: {evt.content!r}")
             args = {}
         return [ToolCallDone(call=ToolCall(name=evt.attrs.get("name", ""), args=args))]
     return []
@@ -53,11 +59,19 @@ def _message_handler(evt: SignalEvent) -> List[SignalEvent]:
     return []
 
 
+def _literal_handler(evt: SignalEvent) -> List[SignalEvent]:
+    if isinstance(evt, BlockDelta):
+        return [TextDelta(text=evt.delta)]
+    return []
+
+
 class DSLParser:
     def __init__(self) -> None:
         self._handlers: Dict[str, Optional[Callable]] = {
             "tool": _tool_handler,
             "message": _message_handler,
+            "literal": _literal_handler,
+            "final": None,
         }
         self.reset()
 

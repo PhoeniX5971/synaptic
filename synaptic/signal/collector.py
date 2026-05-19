@@ -5,7 +5,7 @@ from ..agent.events import EventBus
 from ..core.base.base_model import ResponseChunk, ToolCallArgsDelta
 from ..core.provider import Provider
 from ..core.tool import ToolCall
-from .events import TextDelta, ToolCallDone, ToolCallResult, ToolCallStarted, TurnComplete
+from .events import BlockDone, TextDelta, ToolCallDone, ToolCallResult, ToolCallStarted, TurnComplete
 from .dsl import DSLParser
 
 
@@ -13,7 +13,7 @@ class SignalMode(enum.Enum):
     NONE = "none"
     NATIVE = "native"    # arg deltas from providers that support it natively
     TEXT = "text"        # text DSL for all providers
-    AUTO = "auto"        # native if supported, text DSL fallback
+    AUTO = "auto"        # always text DSL (same as TEXT; provider capability ignored)
 
 
 # NOTE: The following providers do not natively support streaming tool-call
@@ -50,6 +50,7 @@ async def collect(
     announced: Set[str] = set()
     accumulated = ""
     tool_calls: List[ToolCall] = []
+    final_seen = False
     dsl: Optional[DSLParser] = None
     if text_mode:
         dsl = parser or DSLParser()
@@ -71,6 +72,8 @@ async def collect(
                     elif isinstance(evt, TextDelta):
                         accumulated += evt.text
                         yield ResponseChunk(text=evt.text)
+                    elif isinstance(evt, BlockDone) and evt.type == "final":
+                        final_seen = True
                 continue  # don't yield original chunk in text mode
 
             if chunk.is_final:
@@ -79,10 +82,10 @@ async def collect(
                     if isinstance(evt, TextDelta):
                         accumulated += evt.text
                 await _fire("TurnComplete", TurnComplete(
-                    message=accumulated, tool_calls=tool_calls,
+                    message=accumulated, tool_calls=tool_calls, final=final_seen,
                     input_tokens=chunk.input_tokens, output_tokens=chunk.output_tokens,
                 ))
-                yield ResponseChunk(text=accumulated, is_final=True,
+                yield ResponseChunk(text=accumulated, is_final=True, final=final_seen,
                                     input_tokens=chunk.input_tokens,
                                     output_tokens=chunk.output_tokens)
                 return

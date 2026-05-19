@@ -13,6 +13,7 @@ from .events import EventBus
 from .session import Session
 
 Permission = Callable[[str, dict], bool]
+_PROTOCOL_REPROMPT = "No <tool> or <final> emitted. Emit <tool> to continue or <final></final> to finish."
 
 
 class Agent:
@@ -27,6 +28,7 @@ class Agent:
         events: Optional[EventBus] = None,
         signals: Optional[EventBus] = None,
         signal_mode: SignalMode = SignalMode.NONE,
+        max_protocol_retries: int = 2,
     ) -> None:
         self.model = model
         self.session = session or Session()
@@ -45,6 +47,7 @@ class Agent:
             model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
         else:
             model.bind_tools(list(self._registry.all().values()))
+        self.max_protocol_retries = max_protocol_retries
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
@@ -130,7 +133,6 @@ class Agent:
             self._finish()
 
     async def arun(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
-        """Run the agent loop from async code until completion."""
         self._start()
         try:
             next_prompt = prompt
@@ -151,23 +153,16 @@ class Agent:
     async def astream(
         self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
     ) -> AsyncIterator[ResponseChunk]:
-        """Full multi-turn streaming loop.
-
-        Each turn streams text character-by-character. After a turn ends:
-        - tool calls are executed (with permission checks + events)
-        - results are written into history
-        - the next turn begins immediately with prompt=None
-        Loops until no tool calls remain or max_turns is hit.
-        """
         self._start()
         try:
             next_prompt = prompt
             self._add_user(prompt, role)
+            protocol_retries = 0
             for _ in range(self.max_turns):
                 accumulated = ""
                 tool_calls: List[ToolCall] = []
+                final_seen = False
                 created = datetime.now().astimezone(timezone.utc)
-
                 if self._text_mode:
                     self.model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
                 _s = self.model.llm.astream(prompt=next_prompt, role=role, abort=abort, **kwargs)
@@ -176,23 +171,28 @@ class Agent:
                 async for chunk in _s:
                     if abort and abort.is_set():
                         return
+                    if chunk.final: final_seen = True
                     if not chunk.is_final and chunk.text:
                         accumulated += chunk.text
                         await self.events.aemit("text_delta", chunk.text)
                     if chunk.function_call:
                         tool_calls.append(chunk.function_call)
                     yield chunk
-
                 mem = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
                 self.session.history.add(mem)
                 await self.events.aemit("step_end", mem)
-
-                if not tool_calls:
+                if tool_calls:
+                    protocol_retries = 0
+                    complete_tool_call(mem, await self._atool_results(tool_calls), self.session.history)
+                    next_prompt = None
+                    role = "user"
+                    continue
+                if not self._text_mode or not self.signals or final_seen:
                     return
-
-                results = await self._atool_results(tool_calls)
-                complete_tool_call(mem, results, self.session.history)
-                next_prompt = None
+                if protocol_retries >= self.max_protocol_retries:
+                    raise RuntimeError("Agent reached max_protocol_retries")
+                protocol_retries += 1
+                next_prompt = _PROTOCOL_REPROMPT
                 role = "user"
 
             raise RuntimeError("Agent reached max_turns")
