@@ -40,10 +40,9 @@ class MCPSession:
                 await self._stack.aclose()
             except RuntimeError:
                 pass
-            finally:
-                self.session = None
-                self._stack = None
-                self._tools = None
+        self.session = None
+        self._stack = None
+        self._tools = None
 
     async def _connect_stdio(self) -> None:
         from mcp import ClientSession, StdioServerParameters
