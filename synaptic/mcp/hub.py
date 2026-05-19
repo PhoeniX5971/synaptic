@@ -51,9 +51,8 @@ class MCPHub:
         for session in self.sessions.values():
             try:
                 await session.close()
-            except RuntimeError as exc:
-                if "cancel scope" not in str(exc):
-                    errors.append(exc)
+            except Exception as exc:
+                errors.append(exc)
         if errors:
             raise ExceptionGroup("MCP close errors", errors)
 
