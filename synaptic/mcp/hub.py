@@ -47,8 +47,15 @@ class MCPHub:
 
     async def close(self) -> None:
         self.unload_all()
+        errors = []
         for session in self.sessions.values():
-            await session.close()
+            try:
+                await session.close()
+            except RuntimeError as exc:
+                if "cancel scope" not in str(exc):
+                    errors.append(exc)
+        if errors:
+            raise ExceptionGroup("MCP close errors", errors)
 
     def enable_routing(self) -> List[Tool]:
         tools = [self._list_servers_tool(), self._load_tool(), self._unload_tool()]

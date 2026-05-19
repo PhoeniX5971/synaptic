@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 from contextlib import AsyncExitStack
 from typing import Any, List, Optional
 
@@ -35,14 +37,20 @@ class MCPSession:
         return await self.session.call_tool(name, arguments=arguments)
 
     async def close(self) -> None:
-        if self._stack is not None:
-            try:
-                await self._stack.aclose()
-            except RuntimeError:
-                pass
+        stack, self._stack = self._stack, None
         self.session = None
-        self._stack = None
         self._tools = None
+        if stack is None:
+            return
+        try:
+            await stack.aclose()
+        except RuntimeError as exc:
+            if "cancel scope" not in str(exc):
+                raise
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+            raise
 
     async def _connect_stdio(self) -> None:
         from mcp import ClientSession, StdioServerParameters
