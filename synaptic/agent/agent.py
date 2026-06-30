@@ -59,8 +59,8 @@ class Agent:
         self._dsl_parser.register(name, handler)
 
     def _start(self) -> None:
-        if self.session.state == "running":
-            raise RuntimeError("Session is already running")
+        if self.session.state != "idle":
+            raise RuntimeError(f"Session is {self.session.state!r}")
         self.session.state = "running"
         self.model.history = self.session.history
 

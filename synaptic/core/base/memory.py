@@ -25,8 +25,8 @@ class ResponseMem(Memory):
         self,
         message: str,
         created,
-        tool_calls: List[ToolCall] = None,
-        tool_results: List = None,
+        tool_calls: Optional[List[ToolCall]] = None,
+        tool_results: Optional[List] = None,
         role: str = "assistant",
         input_tokens: int = 0,
         output_tokens: int = 0,
@@ -69,21 +69,21 @@ class History:
 
     def __init__(
         self,
-        memoryList: Optional[List[Memory]] = None,
+        memory_list: Optional[List[Memory]] = None,
         size: int = 10,
         on_truncate: Optional[Callable[[List[Memory]], None]] = None,
         dedup_tools: bool = False,
     ):
-        self.MemoryList: List[Memory] = list(memoryList or [])
+        self.entries: List[Memory] = list(memory_list or [])
         self.size = size
         self.on_truncate = on_truncate
         self.dedup_tools = dedup_tools
 
     def _size_update(self) -> None:
-        excess = len(self.MemoryList) - self.size
+        excess = len(self.entries) - self.size
         if excess > 0:
-            dropped = self.MemoryList[:excess]
-            self.MemoryList = self.MemoryList[excess:]
+            dropped = self.entries[:excess]
+            self.entries = self.entries[excess:]
             if self.on_truncate:
                 self.on_truncate(dropped)
             else:
@@ -97,14 +97,14 @@ class History:
     def window(self, size: int) -> List[Memory]:
         self.size = size
         self._size_update()
-        return self.MemoryList
+        return self.entries
 
     def add(self, memory: Memory) -> None:
-        self.MemoryList.append(memory)
+        self.entries.append(memory)
         self._size_update()
 
     def effective_mems(self) -> List[Memory]:
-        """Return MemoryList, optionally with stale duplicate tool results pruned.
+        """Return entries, optionally with stale duplicate tool results pruned.
 
         When dedup_tools=True, for each (tool_name, args) pair only the last
         ResponseMem that contains it is kept. Stale calls (and their results)
@@ -112,20 +112,20 @@ class History:
         is dropped entirely.
         """
         if not self.dedup_tools:
-            return self.MemoryList
+            return self.entries
 
         def _key(call: ToolCall) -> str:
             return f"{call.name}\x00{json.dumps(call.args, sort_keys=True, default=str)}"
 
         # Forward pass: record the last index each (name, args) key appears at.
         last: Dict[str, int] = {}
-        for i, mem in enumerate(self.MemoryList):
+        for i, mem in enumerate(self.entries):
             if isinstance(mem, ResponseMem) and mem.tool_calls:
                 for call in mem.tool_calls:
                     last[_key(call)] = i
 
         result: List[Memory] = []
-        for i, mem in enumerate(self.MemoryList):
+        for i, mem in enumerate(self.entries):
             if not (isinstance(mem, ResponseMem) and mem.tool_calls):
                 result.append(mem)
                 continue
@@ -158,5 +158,5 @@ def complete_tool_call(
 ) -> None:
     """Set tool results and optionally ensure the response is in history."""
     mem.tool_results = results
-    if history is not None and mem not in history.MemoryList:
+    if history is not None and mem not in history.entries:
         history.add(mem)

@@ -189,7 +189,7 @@ class XAIAdapter(BaseModel):
                     accumulated += piece
                     yield ResponseChunk(text=piece, is_final=False, function_call=None)
 
-        for tfc in parse_calls(last_response):
+        for tfc in parse_calls(last_response) if last_response is not None else []:
             yield ResponseChunk(text="", is_final=False, function_call=tfc)
 
         u = getattr(last_response, "usage", None)

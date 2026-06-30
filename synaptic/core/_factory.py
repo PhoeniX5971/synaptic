@@ -64,4 +64,4 @@ def build_adapter(
     elif provider == Provider.UNIVERSAL_OPENAI:
         return UniversalLLMAdapter(**kwargs, base_url=base_url or "")
     else:
-        return GeminiAdapter(**kwargs)
+        raise ValueError(f"Unknown provider: {provider!r}")

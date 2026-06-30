@@ -75,9 +75,6 @@ class Model:
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
 
-        if not self.automem:
-            self._history.window(1)
-
     # ------------------------------------------------------------------ #
     # Properties                                                           #
     # ------------------------------------------------------------------ #
@@ -110,7 +107,8 @@ class Model:
         """Attach tools directly to this model and refresh adapter schemas."""
         if self.tools is None:
             self.tools = []
-        self.tools += tools
+        existing = {t.name for t in self.tools}
+        self.tools += [t for t in tools if t.name not in existing]
         if hasattr(self.llm, "bound_tools"):
             self.llm.bound_tools = self.tools
         self.llm.synaptic_tools = self.tools

@@ -13,3 +13,9 @@ class Session:
     history: History = field(default_factory=History)
     metadata: Dict[str, Any] = field(default_factory=dict)
     state: Literal["idle", "running", "done"] = "idle"
+
+    def reset(self) -> None:
+        """Reset to idle so the session can be reused. Raises if running."""
+        if self.state == "running":
+            raise RuntimeError("Cannot reset a running session")
+        self.state = "idle"

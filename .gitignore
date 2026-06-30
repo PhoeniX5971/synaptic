@@ -19,3 +19,6 @@ env/
 # tests
 test*
 docs.py
+
+# Claude Code session logs (auto-generated)
+logs/

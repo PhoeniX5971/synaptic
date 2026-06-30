@@ -55,12 +55,12 @@ class DeepSeekAdapter(BaseModel):
 
     def _convert_tools(self) -> None:
         self.openai_tools = []
+        all_tools = collect_tools(self.bound_tools, self.tool_registry)
+        self.synaptic_tools = list(all_tools.values())
         if self.response_format != ResponseFormat.NONE:
             return
-        all_tools = collect_tools(self.bound_tools, self.tool_registry)
-        for t_name, t in all_tools.items():
+        for t in all_tools.values():
             self.openai_tools.append({"type": "function", "function": t.declaration})
-        self.synaptic_tools = list(all_tools.values())
 
     def to_messages(self) -> list[ChatCompletionMessageParam]:
         messages: list[ChatCompletionMessageParam] = []

@@ -65,7 +65,11 @@ class GeminiAdapter(BaseModel):
         audio: Optional[List[str]] = None,
         **kwargs,
     ) -> ResponseMem:
-        config = types.GenerateContentConfig(temperature=self.temperature, tools=self.gemini_tools)
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            tools=self.gemini_tools,
+            system_instruction=self.instructions or None,
+        )
         role = self.role_map.get(role, "user")
         contents = []
 
@@ -75,19 +79,9 @@ class GeminiAdapter(BaseModel):
             config.response_mime_type = "application/json"
             if self.response_schema is not None:
                 config.response_schema = self.response_schema
-            # Models will not call functions when expected to output structured formats
             config.tools = None
 
-        # 1. System instructions FIRST
-        if self.instructions:
-            contents.append(
-                types.Content(
-                    role=self.role_map.get("system", "user"),
-                    parts=[types.Part(text=self.instructions)],
-                )
-            )
-
-        # 2. Memory + history
+        # Memory + history
         contents.extend(self.to_contents())
 
         # 3. Current prompt LAST (text + optional images)
@@ -148,7 +142,11 @@ class GeminiAdapter(BaseModel):
         if prompt_parts:
             contents.append(types.Content(role=role, parts=prompt_parts))
 
-        config = types.GenerateContentConfig(temperature=self.temperature, tools=self.gemini_tools)
+        config = types.GenerateContentConfig(
+            temperature=self.temperature,
+            tools=self.gemini_tools,
+            system_instruction=self.instructions or None,
+        )
         if self.response_format == ResponseFormat.NONE:
             config.response_mime_type = "text/plain"
         elif self.response_format == ResponseFormat.JSON:
@@ -156,12 +154,6 @@ class GeminiAdapter(BaseModel):
             if self.response_schema is not None:
                 config.response_schema = self.response_schema
             config.tools = None
-
-        if self.instructions:
-            contents = [types.Content(
-                role=self.role_map.get("system", "user"),
-                parts=[types.Part(text=self.instructions)],
-            )] + contents
 
         accumulated_message = ""
         tool_calls: List[ToolCall] = []

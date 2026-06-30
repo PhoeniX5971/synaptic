@@ -15,7 +15,9 @@ class MCPSession:
         self._error: Optional[BaseException] = None
 
     async def connect(self) -> None:
-        if self.session is not None:
+        if self._task is not None or self.session is not None:
+            if self._ready is not None:
+                await self._ready.wait()
             return
         self._ready = asyncio.Event()
         self._error = None
