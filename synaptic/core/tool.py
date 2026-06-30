@@ -169,6 +169,8 @@ def autotool(
                 "number" if anno is float
                 else "integer" if anno is int
                 else "boolean" if anno is bool
+                else "array" if anno in (list,) or (hasattr(anno, "__origin__") and anno.__origin__ is list)
+                else "object" if anno is dict or (hasattr(anno, "__origin__") and anno.__origin__ is dict)
                 else "string"
             )
             properties[pname] = {"type": ptype, "description": param_descriptions.get(pname, "")}
