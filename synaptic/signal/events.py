@@ -31,8 +31,8 @@ class ToolCallResult:
 class TurnComplete:
     message: str
     tool_calls: List[ToolCall]
-    input_tokens: int = 0
-    output_tokens: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
     final: bool = False
 
 

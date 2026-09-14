@@ -33,3 +33,5 @@ Stable IDs: M milestones, T tasks, D decisions, BUG defects, F findings, S sessi
 Never reuse IDs. Progress is append-only, oldest first. Archived plan and memory
 under `archive/` preserve history and are not current release-readiness claims.
 Raw local transcripts under `logs/` are ignored and are not portable project memory.
+
+See [migration notes](migration.md) for changed public contracts.

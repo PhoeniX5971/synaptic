@@ -87,7 +87,9 @@ async def collect(
                 ))
                 yield ResponseChunk(text=accumulated, is_final=True, final=final_seen,
                                     input_tokens=chunk.input_tokens,
-                                    output_tokens=chunk.output_tokens)
+                                    output_tokens=chunk.output_tokens,
+                                    finish_reason=chunk.finish_reason,
+                                    extensions=dict(chunk.extensions))
                 return
 
         else:

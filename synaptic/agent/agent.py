@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, List, Optional
 
+from ..core._completion import Completion
 from ..core._runner import run_tools_async, run_tools_sync
 from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
@@ -148,8 +149,7 @@ class Agent:
             self._add_user(prompt, role)
             protocol_retries = 0
             for _ in range(self.max_turns):
-                accumulated = ""
-                tool_calls: List[ToolCall] = []
+                completion = Completion()
                 final_seen = False
                 created = datetime.now().astimezone(timezone.utc)
                 if self._text_mode:
@@ -160,14 +160,13 @@ class Agent:
                 async for chunk in _s:
                     if abort and abort.is_set():
                         return
+                    completion.add(chunk)
                     if chunk.final: final_seen = True
                     if not chunk.is_final and chunk.text:
-                        accumulated += chunk.text
                         await self.events.aemit("text_delta", chunk.text)
-                    if chunk.function_call:
-                        tool_calls.append(chunk.function_call)
                     yield chunk
-                mem = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
+                mem = completion.memory(created)
+                tool_calls = mem.tool_calls
                 self.session.history.add(mem)
                 await self.events.aemit("step_end", mem)
                 if tool_calls:

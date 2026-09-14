@@ -1,4 +1,5 @@
 import inspect
+from ..core._awaitables import require_sync
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -78,10 +79,7 @@ class Flow:
             node = self._get_node(current)
             result = node(state)
 
-            if inspect.iscoroutine(result):
-                raise RuntimeError(
-                    f"Node '{current}' is async — use arun() instead of run()."
-                )
+            require_sync(result, f"Node '{current}' is async — use arun() instead of run().")
 
             if isinstance(result, NodeResult):
                 state = result.output
@@ -104,7 +102,7 @@ class Flow:
             node = self._get_node(current)
             result = node(state)
 
-            if inspect.iscoroutine(result):
+            if inspect.isawaitable(result):
                 result = await result
 
             if isinstance(result, NodeResult):
@@ -157,17 +155,14 @@ class Pipeline:
     def run(self, state: Any) -> Any:
         for step in self.steps:
             result = step(state)
-            if inspect.iscoroutine(result):
-                raise RuntimeError(
-                    "Async step detected — use arun() instead of run()."
-                )
+            require_sync(result, "Async step detected — use arun() instead of run().")
             state = result
         return state
 
     async def arun(self, state: Any) -> Any:
         for step in self.steps:
             result = step(state)
-            if inspect.iscoroutine(result):
+            if inspect.isawaitable(result):
                 result = await result
             state = result
         return state

@@ -98,6 +98,7 @@ class TestRetryDecoratorAsync:
 # ---------------------------------------------------------------------------
 class TestRetryWrapper:
     class FakeModel:
+        autorun = False
         instructions = "original"
         _count = 0
 
@@ -149,6 +150,7 @@ class TestRetryWrapper:
 
     def test_astream_retries_on_failure(self):
         class StreamModel:
+            autorun = False
             _attempts = 0
 
             async def astream(self, prompt, **kwargs):
