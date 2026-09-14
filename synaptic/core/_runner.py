@@ -1,9 +1,11 @@
 import inspect
+import time
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from .base import ResponseMem, UserMem
 from .tool import Tool, ToolCall
+from ..logging import _bus
 
 
 def run_tools_sync(tools: List[Tool], blacklist: List[str], tool_calls: List[ToolCall]) -> List[Any]:
@@ -49,13 +51,24 @@ async def run_tools_async(tools: List[Tool], blacklist: List[str], tool_calls: L
     return results
 
 
+def _ctx(model) -> list:
+    return [{"role": m.role, "content": m.message} for m in model.history.entries]
+
+
 def invoke(model, prompt: Optional[str], role: str = "user", images=None, audio=None,
            autorun: bool = None, automem: bool = None, **kwargs) -> ResponseMem:
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
     created = datetime.now().astimezone(timezone.utc)
+    t0 = time.monotonic()
     memory = model.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
+
+    if _bus.active():
+        _bus.emit({"type": "model.invoke", "provider": str(model.provider), "model": model.model,
+                   "prompt": prompt, "role": role, "context": _ctx(model), "response": memory.message,
+                   "input_tokens": memory.input_tokens, "output_tokens": memory.output_tokens,
+                   "latency_ms": int((time.monotonic() - t0) * 1000)})
 
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
@@ -83,8 +96,7 @@ async def ainvoke(model, prompt: Optional[str], role: str = "user", images=None,
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
-    # Drive the native async stream to completion and collect the full response.
-    # This gives true async execution without blocking the event loop.
+    t0 = time.monotonic()
     accumulated = ""
     tool_calls: List[ToolCall] = []
     async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs):
@@ -94,6 +106,12 @@ async def ainvoke(model, prompt: Optional[str], role: str = "user", images=None,
             tool_calls.append(chunk.function_call)
 
     memory = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
+
+    if _bus.active():
+        _bus.emit({"type": "model.ainvoke", "provider": str(model.provider), "model": model.model,
+                   "prompt": prompt, "role": role, "context": _ctx(model), "response": accumulated,
+                   "input_tokens": memory.input_tokens, "output_tokens": memory.output_tokens,
+                   "latency_ms": int((time.monotonic() - t0) * 1000)})
 
     if _autorun and memory.tool_calls:
         memory.tool_results = await run_tools_async(model.llm.synaptic_tools, model.blacklist, memory.tool_calls)
@@ -118,19 +136,26 @@ async def astream(model, prompt: Optional[str], role: str = "user", images=None,
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
+    if _bus.active():
+        _bus.emit({"type": "model.stream.start", "provider": str(model.provider), "model": model.model,
+                   "prompt": prompt, "role": role, "context": _ctx(model)})
+
     created = datetime.now().astimezone(timezone.utc)
+    t0 = time.monotonic()
     accumulated = ""
     tool_calls: List[ToolCall] = []
     tool_results: List[Any] = []
+    input_tokens = output_tokens = 0
 
     async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, abort=abort, **kwargs):
         if abort and abort.is_set():
             return
-        yield chunk
-
-        if getattr(chunk, "text", None) and not chunk.is_final:
+        if chunk.is_final:
+            input_tokens, output_tokens = chunk.input_tokens, chunk.output_tokens
+        elif chunk.text:
             accumulated += chunk.text
-
+            if _bus.stream_chunks and _bus.active():
+                _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
         if getattr(chunk, "function_call", None):
             tool_calls.append(chunk.function_call)
             if _autorun:
@@ -139,6 +164,12 @@ async def astream(model, prompt: Optional[str], role: str = "user", images=None,
                     tool_results.extend(tr)
                 except Exception as e:
                     tool_results.append({"name": chunk.function_call.name, "error": str(e)})
+        yield chunk
+
+    if _bus.active():
+        _bus.emit({"type": "model.stream.end", "provider": str(model.provider), "model": model.model,
+                   "response": accumulated, "input_tokens": input_tokens, "output_tokens": output_tokens,
+                   "latency_ms": int((time.monotonic() - t0) * 1000)})
 
     final_mem = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
     final_mem.tool_results = tool_results

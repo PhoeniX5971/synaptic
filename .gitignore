@@ -16,9 +16,15 @@ env/
 # .env
 .env
 
-# tests
-test*
-docs.py
+# Test/tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Machine-specific agent support (tracked instructions stay tracked)
+.claude/hooks/
+.claude/settings.json
+.claude/skills/
 
 # Claude Code session logs (auto-generated)
 logs/

@@ -19,3 +19,17 @@ Provider-specific notes:
 - [`providers/gemini.md`](providers/gemini.md)
 
 Runnable examples live in [`examples/`](examples/).
+
+## Production and handoff records
+
+Read [next steps](next-steps.md), [roadmap](roadmap.md), latest
+[progress](progress-log.md), and [development plan](development-plan.md) first.
+Then consult [architecture](architecture.md), [implementation rationale](implementation-rationale.md),
+[decisions](decisions.md), [known issues](known-issues.md), [testing](testing.md),
+[debugging](debugging.md), and [technology/compatibility](tech-stack.md).
+The [hardening brief](hardening-brief.md) preserves requested acceptance criteria.
+
+Stable IDs: M milestones, T tasks, D decisions, BUG defects, F findings, S sessions.
+Never reuse IDs. Progress is append-only, oldest first. Archived plan and memory
+under `archive/` preserve history and are not current release-readiness claims.
+Raw local transcripts under `logs/` are ignored and are not portable project memory.

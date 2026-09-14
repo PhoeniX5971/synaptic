@@ -1,7 +1,9 @@
 import asyncio
 import contextlib
+import time
 from typing import Any, List, Optional
 
+from ..logging import _bus
 from .servers import HttpMCPServer, MCPServer, StdioMCPServer
 
 
@@ -40,13 +42,18 @@ class MCPSession:
 
     async def call_tool(self, name: str, arguments: dict) -> Any:
         await self.connect()
-        return await self.session.call_tool(name, arguments=arguments)
+        t0 = time.monotonic()
+        result = await self.session.call_tool(name, arguments=arguments)
+        _bus.emit({"type": "mcp.tool", "server": _server_id(self.server), "name": name,
+                   "args": arguments, "latency_ms": int((time.monotonic() - t0) * 1000)})
+        return result
 
     async def close(self) -> None:
         task, self._task = self._task, None
         self._tools = None
         if task is None:
             return
+        _bus.emit({"type": "mcp.disconnect", "server": _server_id(self.server)})
         task.cancel()
         with contextlib.suppress(Exception):
             await task
@@ -67,6 +74,7 @@ class MCPSession:
                 async with ClientSession(read, write) as session:
                     self.session = session
                     await session.initialize()
+                    _bus.emit({"type": "mcp.connect", "server": _server_id(self.server)})
                     self._ready.set()
                     await asyncio.get_running_loop().create_future()
         except asyncio.CancelledError:
@@ -89,6 +97,7 @@ class MCPSession:
                 async with ClientSession(read, write) as session:
                     self.session = session
                     await session.initialize()
+                    _bus.emit({"type": "mcp.connect", "server": _server_id(self.server)})
                     self._ready.set()
                     await asyncio.get_running_loop().create_future()
         except asyncio.CancelledError:
@@ -99,3 +108,11 @@ class MCPSession:
                 self._ready.set()
         finally:
             self.session = None
+
+
+def _server_id(server: MCPServer) -> str:
+    if isinstance(server, StdioMCPServer):
+        return server.command
+    if isinstance(server, HttpMCPServer):
+        return server.url
+    return repr(server)
