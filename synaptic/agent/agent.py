@@ -1,4 +1,3 @@
-import inspect
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Callable, List, Optional
 
@@ -6,9 +5,11 @@ from ..core._runner import run_tools_async, run_tools_sync
 from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
 from ..core.tool import Tool, ToolCall, ToolRegistry
+from ..logging import _bus
 from ..signal.collector import SignalMode, collect as _signal_collect, needs_text_mode
 from ..signal.dsl import DSLParser, build_dsl_instructions
 from ..signal.events import ToolCallResult as _SignalTCR
+from . import _perm
 from .events import EventBus
 from .session import Session
 
@@ -63,40 +64,27 @@ class Agent:
             raise RuntimeError(f"Session is {self.session.state!r}")
         self.session.state = "running"
         self.model.history = self.session.history
+        _bus.emit({"type": "agent.start", "session_id": self.session.id})
 
     def _finish(self) -> None:
         self.session.state = "done"
+        _bus.emit({"type": "agent.end", "session_id": self.session.id})
 
     def _add_user(self, prompt: Optional[str], role: str) -> None:
         if prompt is not None:
             created = datetime.now().astimezone(timezone.utc)
             self.session.history.add(UserMem(message=prompt, role=role, created=created))
 
-    def _allow(self, call: ToolCall) -> bool:
-        if self.permission is None:
-            return True
-        allowed = self.permission(call.name, call.args)
-        if inspect.isawaitable(allowed):
-            raise RuntimeError("Async permission requires arun()")
-        return bool(allowed)
-
-    async def _aallow(self, call: ToolCall) -> bool:
-        if self.permission is None:
-            return True
-        allowed = self.permission(call.name, call.args)
-        if inspect.isawaitable(allowed):
-            allowed = await allowed
-        return bool(allowed)
-
     def _tool_results(self, calls: List[ToolCall]) -> List[Any]:
         results: List[Any] = []
         for call in calls:
             self.events.emit("tool_start", call)
-            if not self._allow(call):
+            if not _perm.allow(self.permission, call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
                 result = run_tools_sync(list(self._registry.all().values()), self.model.blacklist, [call])[0]
             self.events.emit("tool_end", call, result)
+            _bus.emit({"type": "agent.tool", "session_id": self.session.id, "name": call.name, "args": call.args, "result": result})
             results.append(result)
         return results
 
@@ -104,13 +92,14 @@ class Agent:
         results: List[Any] = []
         for call in calls:
             await self.events.aemit("tool_start", call)
-            if not await self._aallow(call):
+            if not await _perm.aallow(self.permission, call):
                 result = {"name": call.name, "error": "Permission denied"}
             else:
                 result = (await run_tools_async(list(self._registry.all().values()), self.model.blacklist, [call]))[0]
             await self.events.aemit("tool_end", call, result)
             if self.signals:
                 await self.signals.aemit("ToolCallResult", _SignalTCR(call=call, result=result))
+            _bus.emit({"type": "agent.tool", "session_id": self.session.id, "name": call.name, "args": call.args, "result": result})
             results.append(result)
         return results
 

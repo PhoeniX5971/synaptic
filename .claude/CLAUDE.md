@@ -1,57 +1,28 @@
-# Engineering Standard
+# Synaptic engineering workflow
 
-This project runs under a fixed working agreement. Follow it on every task.
+Use the production-coding-workflow and coding-agent-handoff-protocol skills.
+Canonical project memory starts at `docs/README.md`: read roadmap, latest progress,
+next steps, development plan, relevant architecture, rationale, decisions, issues
+and testing notes before editing. Update those records with meaningful changes.
+Historical `memory/` and `PLAN.MD` are archived in `docs/archive/`.
 
-## Core principles
+Keep source modules focused and at most 200 lines when adding or changing them;
+record inherited oversized files instead of performing unrelated rewrites.
+Prefer simple, explicit boundaries and actionable engineering records.
+Make routine decisions within authorized scope and preserve existing work.
 
-1. **Small, focused files.** Target **≤ 200 lines** per source file. If a file
-   grows past that, split it by responsibility into cohesive modules. This is
-   enforced — a hook blocks oversized code files, so design for it up front
-   rather than refactoring after the block.
+Commit cohesive changes with matching records. Author and committer must both be
+PhoeniX5971 <moh845195@gmail.com>. Check identity before each commit; no authorship
+trailers, bypassing hooks, publication, remote changes or history rewriting.
+Use `type(scope): imperative summary [T-NNN]` subjects and Why, Changes, Validation
+body sections. Only the user publishes.
 
-2. **Simplest correct solution wins.** Prefer the lower-complexity option in
-   time, memory, and structure. Reach for a clever or layered design only when a
-   simpler one genuinely cannot meet the requirement — and say why.
+Run deterministic tests without credentials or network. Live demos in
+`examples/live/` require explicit invocation. Record commands and limitations;
+do not treat mocks as transport or provider qualification. Keep consumer desktop
+policy, grants and persistence outside Synaptic.
 
-3. **Performance by default.** Lazy-load what isn't needed yet. Load/compute
-   once and reuse. Never repeat work on a hot path. Call out any change that
-   adds latency or allocation to a frequently-run path.
-
-4. **Ask, don't assume.** If intent, scope, or expected behavior is unclear,
-   ask before writing code. A wrong assumption costs more than a question.
-   Surface unknowns explicitly instead of guessing.
-
-## Memory protocol — read before you build
-
-`memory/` is the project's long-term brain. The full transcript of everything
-done lives in `logs/` (auto-written); `memory/` is the curated *why*.
-
-**At the start of any non-trivial task, read:**
-- `memory/intent.md` — what the user actually wants and current priorities.
-- `memory/bugs.md` — past bugs and their root causes. **Reason over this so a
-  fixed bug never returns.** If your change touches a area listed here, account
-  for it.
-- `memory/file-map.md` — what each significant file does and why it exists.
-
-**After a meaningful change, update memory before you consider the task done:**
-- `memory/changelog.md` — append what changed and *why* (newest at top).
-- `memory/file-map.md` — keep the file→purpose map current when files are
-  added, removed, or repurposed.
-- `memory/bugs.md` — when you find/fix a bug, record: what it was, where, the
-  **root cause** (why it existed), and how it's prevented now.
-- `memory/intent.md` — when goals or constraints shift.
-- `memory/backlog.md` — track outstanding tasks (mirrors ClickUp once wired).
-
-Keep memory entries short and factual. Link related entries inline.
-
-## Git commits
-
-Always commit as the user (PhoeniX5971) as sole author. Never add a
-`Co-Authored-By` line. Never pass `--no-verify`. Use a HEREDOC for the
-commit message to preserve formatting.
-
-## Logs
-
-`logs/session-YYYY-MM-DD.md` is written automatically by hooks — every prompt,
-every response, every tool action. Do not edit logs by hand; they are the audit
-trail for deep reviews. If a hook ever misbehaves, see `.claude/hooks/`.
+`docs/progress-log.md` is the append-only curated work log (oldest first).
+`logs/` contains ignored local raw transcripts: preserve existing logs, never
+commit credentials or raw transcripts, and do not claim hooks run across agents.
+Local `.claude/` hooks/settings are machine-specific and do not travel with clones.
