@@ -28,14 +28,18 @@ class ResponseMem(Memory):
         tool_calls: Optional[List[ToolCall]] = None,
         tool_results: Optional[List] = None,
         role: str = "assistant",
-        input_tokens: int = 0,
-        output_tokens: int = 0,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        finish_reason: Optional[str] = None,
+        extensions: Optional[dict] = None,
     ):
         super().__init__(message, created, role)
         self.tool_calls: List[ToolCall] = tool_calls or []
         self.tool_results: List = tool_results or []
-        self.input_tokens: int = input_tokens
-        self.output_tokens: int = output_tokens
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.finish_reason = finish_reason
+        self.extensions = dict(extensions or {})
 
     def list_tool_calls(self) -> List[str]:
         return [tc.name for tc in self.tool_calls]

@@ -4,7 +4,7 @@ from . import _runner as _r
 from ._factory import build_adapter
 from .base import History, ResponseFormat, ResponseMem
 from .provider import Provider
-from .tool import Tool, ToolRegistry
+from .tool import Tool, ToolRegistry, collect_tools
 
 
 class Model:
@@ -103,15 +103,35 @@ class Model:
     # Tool binding                                                         #
     # ------------------------------------------------------------------ #
 
-    def bind_tools(self, tools: List[Tool]) -> None:
-        """Attach tools directly to this model and refresh adapter schemas."""
-        if self.tools is None:
-            self.tools = []
-        existing = {t.name for t in self.tools}
-        self.tools += [t for t in tools if t.name not in existing]
-        if hasattr(self.llm, "bound_tools"):
-            self.llm.bound_tools = self.tools
-        self.llm.synaptic_tools = self.tools
+    @property
+    def tools(self) -> List[Tool]:
+        """Current adapter tool snapshot, including registry changes."""
+        return list(self.llm.synaptic_tools or [])
+
+    @tools.setter
+    def tools(self, tools: List[Tool]) -> None:
+        # Retain assignment compatibility; prefer bind_tools/unbind_tools.
+        if hasattr(self, "llm"):
+            self.llm.synaptic_tools = list(tools or [])
+
+    def bind_tools(self, tools: List[Tool], *, replace: bool = False) -> None:
+        """Bind unique names; reject conflicting definitions unless replace=True."""
+        bound = {t.name: t for t in self.llm.bound_tools or []}
+        for tool in tools:
+            existing = bound.get(tool.name)
+            if existing is not None and existing is not tool and not replace:
+                raise ValueError(f"Tool {tool.name!r} is already bound; use replace=True")
+            bound[tool.name] = tool
+        self._set_bound_tools(list(bound.values()))
+
+    def unbind_tools(self, *names: str) -> None:
+        """Remove explicit bindings; registry tools remain registry-owned."""
+        self._set_bound_tools([t for t in self.llm.bound_tools if t.name not in names])
+
+    def _set_bound_tools(self, tools: List[Tool]) -> None:
+        self.llm.bound_tools = list(tools)
+        registry = getattr(self, "tool_registry", None)
+        self.llm.synaptic_tools = list(collect_tools(tools, registry).values())
         self.llm._invalidate_tools()
 
     # ------------------------------------------------------------------ #

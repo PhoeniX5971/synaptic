@@ -1,4 +1,5 @@
 import inspect
+from ..core._awaitables import require_sync
 from typing import Any, Callable, Dict, List
 
 
@@ -16,8 +17,7 @@ class EventBus:
         """Emit an event to sync handlers."""
         for fn in self._handlers.get(event, []):
             result = fn(*args)
-            if inspect.isawaitable(result):
-                raise RuntimeError("Async event handlers require aemit()")
+            require_sync(result, "Async event handlers require aemit()")
 
     async def aemit(self, event: str, *args: Any) -> None:
         """Emit an event and await handlers that return awaitables."""

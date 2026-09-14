@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from .base import ResponseMem, UserMem
+from ._awaitables import require_sync
+from ._completion import Completion
 from .tool import Tool, ToolCall
 from ..logging import _bus
 
@@ -21,7 +23,7 @@ def run_tools_sync(tools: List[Tool], blacklist: List[str], tool_calls: List[Too
             if tool.is_async:
                 raise RuntimeError(f"Tool '{name}' is async, cannot run in sync invoke()")
             try:
-                results.append({"name": name, "result": tool.run(**args)})
+                results.append({"name": name, "result": require_sync(tool.run(**args), "Async tool result requires ainvoke()")})
             except Exception as e:
                 results.append({"name": name, "error": str(e)})
         else:
@@ -41,7 +43,7 @@ async def run_tools_async(tools: List[Tool], blacklist: List[str], tool_calls: L
         if tool and name not in blacklist:
             try:
                 res = tool.run(**args)
-                if inspect.iscoroutine(res):
+                if inspect.isawaitable(res):
                     res = await res
                 results.append({"name": name, "result": res})
             except Exception as e:
@@ -97,19 +99,15 @@ async def ainvoke(model, prompt: Optional[str], role: str = "user", images=None,
     _automem = automem if automem is not None else model.automem
 
     t0 = time.monotonic()
-    accumulated = ""
-    tool_calls: List[ToolCall] = []
+    completion = Completion()
     async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs):
-        if not chunk.is_final and chunk.text:
-            accumulated += chunk.text
-        if chunk.function_call:
-            tool_calls.append(chunk.function_call)
+        completion.add(chunk)
 
-    memory = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
+    memory = completion.memory(created)
 
     if _bus.active():
         _bus.emit({"type": "model.ainvoke", "provider": str(model.provider), "model": model.model,
-                   "prompt": prompt, "role": role, "context": _ctx(model), "response": accumulated,
+                   "prompt": prompt, "role": role, "context": _ctx(model), "response": completion.text,
                    "input_tokens": memory.input_tokens, "output_tokens": memory.output_tokens,
                    "latency_ms": int((time.monotonic() - t0) * 1000)})
 
@@ -142,22 +140,17 @@ async def astream(model, prompt: Optional[str], role: str = "user", images=None,
 
     created = datetime.now().astimezone(timezone.utc)
     t0 = time.monotonic()
-    accumulated = ""
-    tool_calls: List[ToolCall] = []
+    completion = Completion()
     tool_results: List[Any] = []
-    input_tokens = output_tokens = 0
 
     async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, abort=abort, **kwargs):
         if abort and abort.is_set():
             return
-        if chunk.is_final:
-            input_tokens, output_tokens = chunk.input_tokens, chunk.output_tokens
-        elif chunk.text:
-            accumulated += chunk.text
+        completion.add(chunk)
+        if not chunk.is_final and chunk.text:
             if _bus.stream_chunks and _bus.active():
                 _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
         if getattr(chunk, "function_call", None):
-            tool_calls.append(chunk.function_call)
             if _autorun:
                 try:
                     tr = await run_tools_async(model.llm.synaptic_tools, model.blacklist, [chunk.function_call])
@@ -168,11 +161,10 @@ async def astream(model, prompt: Optional[str], role: str = "user", images=None,
 
     if _bus.active():
         _bus.emit({"type": "model.stream.end", "provider": str(model.provider), "model": model.model,
-                   "response": accumulated, "input_tokens": input_tokens, "output_tokens": output_tokens,
+                   "response": completion.text, "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
                    "latency_ms": int((time.monotonic() - t0) * 1000)})
 
-    final_mem = ResponseMem(message=accumulated, created=created, tool_calls=tool_calls)
-    final_mem.tool_results = tool_results
+    final_mem = completion.memory(created, tool_results)
 
     if _automem and model.history and prompt is not None:
         model.history.add(UserMem(message=prompt, role=role, created=created))

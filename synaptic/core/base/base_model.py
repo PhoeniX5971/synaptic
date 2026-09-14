@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 import enum
 
@@ -28,9 +28,10 @@ class ResponseChunk:
     function_call: Optional[Any] = None
     tool_call_delta: Optional[ToolCallArgsDelta] = None
     finish_reason: Optional[str] = None   # "stop" | "tool_calls" | "max_tokens"
-    input_tokens: int = 0
-    output_tokens: int = 0
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
     final: bool = False
+    extensions: dict[str, Any] = field(default_factory=dict)
 
 
 class BaseModel(ABC):

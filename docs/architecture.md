@@ -20,3 +20,8 @@ global and currently logs payloads without privacy guarantees (finding 18).
 History is in-memory and text-oriented. Persistence, desktop policy and grants
 belong to consumers. Current models/agents mutate shared state; do not concurrently
 share instances until isolation contracts are qualified.
+
+Completion assembly is now shared by Model async paths and Agent streaming.
+Unknown usage is explicit. Model binding changes rebuild provider schemas while
+registry-derived tools remain owned by the registry. Retry observes a strict
+first-yield boundary and requires safe invocation before retrying generation.
