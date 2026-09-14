@@ -14,7 +14,7 @@ def make_tool(server_name: str, mcp_tool: Any, session: MCPSession) -> Tool:
     description = getattr(mcp_tool, "description", "") or ""
     schema = getattr(mcp_tool, "inputSchema", None) or getattr(mcp_tool, "input_schema", None)
     schema = schema or {"type": "object", "properties": {}}
-    call = _make_call(name, session)
+    call = _make_call(name, session, server_name)
     return Tool(
         name=tool_name(server_name, name),
         declaration={
@@ -27,9 +27,9 @@ def make_tool(server_name: str, mcp_tool: Any, session: MCPSession) -> Tool:
     )
 
 
-def _make_call(name: str, session: MCPSession) -> Callable[..., Any]:
+def _make_call(name: str, session: MCPSession, server_name: str) -> Callable[..., Any]:
     async def call(**kwargs: Any) -> Any:
         result = await session.call_tool(name, kwargs)
-        return normalize_result(result)
+        return normalize_result(result, provenance={"server": server_name, "tool": name})
 
     return call

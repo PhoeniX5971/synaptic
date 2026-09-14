@@ -44,3 +44,30 @@ Package install initially failed at sandbox DNS; escalated install succeeded for
 MCP 1.30.0, Ruff 0.15.6, mypy 1.19.1. Inspected SDK signatures and official tagged
 source: HTTP headers belong on httpx.AsyncClient, not streamable_http_client.
 Next: T-005 with real stdio/loopback qualification.
+
+## S-003 — 2026-09-14 — MCP results, discovery and lifecycle
+
+Agent: Codex. Starting core commit: 210c10d; author/committer verified. Implemented
+versioned JSON MCP envelope and explicit text/legacy helpers, bounded/validated
+pagination with atomic session snapshots, attempt-specific lifecycle ownership,
+finite startup/request/shutdown/health deadlines and explicit reconnect. Preserved
+SDK context ownership in one task. Updated HTTP client/header API for SDK 1.30.0.
+
+Added real subprocess stdio and loopback HTTP fixtures plus JSON/error, discovery
+limits, cancellation, owner failure, repeated close and slow-shutdown regressions.
+Sandbox transport run: 28 passed, 2 failed (stdio timeout and denied socket);
+escalated transport run: 2 passed, 1 failed (fixture bare-dict structured annotation).
+Fixed fixture annotation, then **3 real transport tests passed**. Full suite with
+RuntimeWarning as error: **175 passed, 2 expected history warnings**. A final review
+identified concurrent reconnect close completion clobbering a newer owner state;
+added a generation guard and dedicated regression.
+
+Focused mypy initially found missing jsonschema stubs and two type annotations;
+added concrete internal annotations and an explicit import-untyped exemption for
+jsonschema, then all 8 selected modules passed with check-untyped-defs. Ruff fatal
+checks and diff whitespace checks passed. Exact commands and compatibility sources
+are in `qualification.md`. T-001–T-005 complete; T-006 is the next action.
+Remaining findings are individually reported with prerequisites in finding-report.md;
+no live provider, full packaging, wire memory bound or whole-program completion claim.
+
+Final validation after reconnect guard: `.venv/bin/python -m pytest tests -q -W error::RuntimeWarning` → **176 passed, 2 expected history warnings**. Extracted the short-deadline test factory into `tests/mcp_fakes.py`; its lifecycle suite passed 7 tests afterward. New/modified MCP source modules remain below 200 lines.

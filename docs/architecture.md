@@ -25,3 +25,11 @@ Completion assembly is now shared by Model async paths and Agent streaming.
 Unknown usage is explicit. Model binding changes rebuild provider schemas while
 registry-derived tools remain owned by the registry. Retry observes a strict
 first-yield boundary and requires safe invocation before retrying generation.
+
+MCP transport ownership now has explicit new/connecting/connected/closing/closed/failed
+states. `MCPSession` owns a bounded, atomically published discovery cache; SDK
+transports are isolated in `_transport.py`, lifecycle in `_connection.py`.
+MCP tools return the versioned normalized envelope. Session catalog visibility is
+separate from the still-legacy MCPHub registry lifecycle, which is the next boundary
+to harden. Each HTTP session has its own client/headers; there is no shared
+credential-based cache or connection pool.

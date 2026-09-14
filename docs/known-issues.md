@@ -5,9 +5,9 @@ only by current executable evidence. All seven defects reproduced before impleme
 
 | ID | Finding | Status / evidence or prerequisite |
 | --- | --- | --- |
-| BUG-001 | Lossy MCP normalization | investigating; early structured return discards blocks |
-| BUG-002 | Discovery pagination | investigating; only first page consumed |
-| BUG-003 | Failed connection readiness | investigating; existing-task path skips error check |
+| BUG-001 | Lossy MCP normalization | resolved; JSON envelope preserves blocks, values, metadata; real mixed stdio output |
+| BUG-002 | Discovery pagination | resolved; bounded paginated discovery with atomic session catalog and failure regressions |
+| BUG-003 | Failed connection readiness | resolved; explicit states, coalesced waiters, timeout/cancel/reconnect/EOF and cleanup tests |
 | BUG-004 | Async usage loss | resolved; completion parity fixtures include 12/3, zero and unavailable usage |
 | BUG-005 | Stream retry replay | resolved; no restart after a yield or when autorun can cause effects |
 | BUG-006 | General awaitables | resolved; awaitables and sync coroutine cleanup regressions |
@@ -23,7 +23,7 @@ only by current executable evidence. All seven defects reproduced before impleme
 | F-016 | Run outcomes/observers | planned T-008; finally still marks sessions done |
 | F-017 | Retry policy | improved T-004; bounds and transient defaults fixed; backoff/jitter/deadline T-008 |
 | F-018 | Logging privacy/reliability | planned T-008; disable payload logging for sensitive workloads |
-| F-019 | Packaging/protocol support | planned T-009; eager SDK imports, unbounded dependencies |
+| F-019 | Packaging/protocol support | improved MCP bound/real qualification; provider extras, lock and install matrix remain T-009 |
 
 ## BUG-020 — stale ignored tests (resolved in T-001)
 

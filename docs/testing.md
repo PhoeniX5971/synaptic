@@ -16,3 +16,13 @@ stale expectations; new seven-defect regressions must fail before fixes.
 No existing real MCP fixtures, clean-install matrix, type-check baseline or lockfile
 was found. Track added commands/versions/results below as they are actually run.
 Do not infer interoperability or scalability from mock tests.
+
+## Current checks
+
+See [qualification](qualification.md) for exact before/after results and versions.
+The complete suite includes real local transports; in a restricted sandbox run
+`--ignore=tests/test_mcp_transports.py` for in-process tests, and run transport tests
+with local subprocess/socket permissions. RuntimeWarning is treated as an error
+in the final suite command. The only remaining warnings are expected history
+truncation notices. MCP tests require the MCP extra; live-provider demos remain
+manual. No external provider calls are part of qualification.

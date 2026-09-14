@@ -35,3 +35,6 @@ under `archive/` preserve history and are not current release-readiness claims.
 Raw local transcripts under `logs/` are ignored and are not portable project memory.
 
 See [migration notes](migration.md) for changed public contracts.
+
+Measured evidence: [qualification](qualification.md). Scope/status by original finding:
+[finding report](finding-report.md).

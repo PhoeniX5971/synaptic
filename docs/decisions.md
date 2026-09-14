@@ -19,3 +19,17 @@ expectations with committed behavior, and separate manual live demos.
 Start with seven reproducible defects; public APIs may change with migrations.
 Keep remaining improvements explicitly planned. Fake providers can establish
 framework accounting, but cannot qualify a live provider or real MCP transport.
+
+## D-004 — 2026-09-14: explicit lossy compatibility and bounded ownership
+
+Use a JSON-only versioned MCP envelope by default, retaining text extraction and
+legacy flattening as explicit conveniences. A dataclass-only result would require
+custom serialization in every existing provider tool-result path. JSON dictionaries
+fit those consumers while preserving modalities and provenance.
+
+A failed connection requires an explicit reconnect. Silent reconnect during a
+failed tool request could duplicate an uncertain effect. Use SDK ping for idle
+liveness instead of depending on private SDK receive-task state. Preserve owner
+task context-manager lifetime, quarantine slow shutdown and expose finite limits.
+Qualify the official 1.30.0 SDK; bound the extra below 2.x without claiming every
+future 1.x version or every protocol extension has been tested.

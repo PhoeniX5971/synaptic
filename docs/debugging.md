@@ -9,3 +9,10 @@ different tasks. Preserve the first startup error for every concurrent waiter.
 
 Historical tests were ignored, so “suite passed” in old memory is not evidence for
 this checkout. Avoid running manual provider demos when reproducing offline bugs.
+
+MCP SDK 1.30.0 streamable_http_client accepts http_client rather than headers.
+Configure headers on a session-owned httpx.AsyncClient. FastMCP structured output
+fixtures need a supported return annotation (`dict[str, str]`, not bare `dict`).
+A socket PermissionError or stdio handshake timeout under the sandbox can be an
+environment restriction: rerun the same local-only test with authorized permissions
+before changing production transport behavior.

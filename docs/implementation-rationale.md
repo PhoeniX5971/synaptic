@@ -43,3 +43,41 @@ unbind_tools removes explicit overrides; registry removal uses unregister.
 disables automatic retries; unknown producers need retry_safe=True. The generic
 decorator retains caller responsibility. ConnectionError/TimeoutError are narrow
 wrapper defaults; SDK-specific transient exceptions must be explicitly configured.
+
+## MCP results and discovery (T-005)
+
+`results.py` returns a versioned JSON-only envelope: typed content dictionaries,
+structured value/presence, tool error flag, metadata, extensions and provenance.
+SDK models serialize by alias; arbitrary opaque objects are rejected. Text
+extraction and the old flattening operation are explicit helpers. Native block
+fields/annotations survive; they remain server claims, not permission grants.
+`errors.py` retains JSON-RPC code/data and separates call transport failure from
+tool-reported failure. Native exception context remains chained for diagnostics.
+
+`_discovery.py` builds a candidate under page/tool/decoded-byte/time limits, rejects
+repeated cursors, duplicate names and invalid input schemas, then returns it only
+on success. `MCPSession.list_tools` serializes discovery with a lock and publishes
+a deep copy in one assignment. Callers get independent snapshots. This bounds
+retained catalogs, not SDK wire buffering; a malicious single frame can be decoded
+by the SDK before this boundary rejects it. Hub registry transactions remain T-006.
+
+## MCP lifecycle and SDK integration (T-005)
+
+`_connection.py` owns an attempt-specific readiness event/error so simultaneous
+callers see the same startup outcome. Imports/configuration run inside the guarded
+owner. A cancelled waiter leaves other waiters intact; the last departing startup
+waiter cancels the abandoned owner. Close cancels once and waits for a bounded
+period without recancelling transport unwind. A stuck owner stays quarantined in
+closing state, preventing replacement. Concurrent close completion cannot clobber
+a newer owner's state. Explicit reconnect closes before starting another attempt.
+
+`_transport.py` alone opens stdio/HTTP SDK contexts in the owner task. HTTP headers
+are scoped to its own httpx client. Initialization publishes a live session only
+after success; periodic SDK ping detects dead idle transports within the configured
+health interval plus request timeout. Call failures invalidate the live reference;
+no effectful request is replayed. Transport exceptions from initialization retain
+the original SDK error; call-level JSON-RPC and transport errors use public classes.
+
+Defaults: connection 10s, shutdown 5s, ping interval 15s, request 30s; discovery
+100 pages/10,000 tools/8 MiB decoded JSON/30s total including lock/startup. These
+are configurable conservative limits, not throughput or scalability claims.

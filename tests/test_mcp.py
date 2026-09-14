@@ -26,7 +26,7 @@ class FakeSession:
 
     async def call_tool(self, name, arguments):
         self.calls.append((name, arguments))
-        content = [SimpleNamespace(text=arguments["text"])]
+        content = [SimpleNamespace(type="text", text=arguments["text"])]
         return SimpleNamespace(content=content, structuredContent=None, isError=False)
 
     async def close(self):
@@ -49,7 +49,10 @@ def test_load_server_registers_prefixed_tools():
 
         tool = registry.all()["small__echo"]
         assert tool.declaration["parameters"]["required"] == ["text"]
-        assert await tool.run(text="hi") == "hi"
+        from synaptic.mcp import extract_text
+        result = await tool.run(text="hi")
+        assert extract_text(result) == "hi"
+        assert result["provenance"] == {"server": "small", "tool": "echo"}
         assert fake.calls == [("echo", {"text": "hi"})]
 
     asyncio.run(run())
