@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp"]
+mcp = ["mcp>=1.30,<2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

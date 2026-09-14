@@ -1,118 +1,77 @@
+"""MCP session API: explicit connection ownership and atomic catalog refresh."""
+
 import asyncio
-import contextlib
+import copy
 import time
-from typing import Any, List, Optional
+from typing import Any
 
 from ..logging import _bus
-from .servers import HttpMCPServer, MCPServer, StdioMCPServer
+from ._connection import Connection, ConnectionState
+from ._discovery import DiscoveryLimits, discover
+from .errors import MCPTransportError, classify_error
+from .servers import MCPServer
 
 
-class MCPSession:
-    def __init__(self, server: MCPServer) -> None:
-        self.server = server
-        self.session: Any = None
-        self._tools: Optional[List[Any]] = None
-        self._task: Optional[asyncio.Task] = None
-        self._ready: Optional[asyncio.Event] = None
-        self._error: Optional[BaseException] = None
+class MCPSession(Connection):
+    def __init__(
+        self,
+        server: MCPServer,
+        *,
+        discovery_limits: DiscoveryLimits | None = None,
+        **connection_options,
+    ) -> None:
+        super().__init__(server, **connection_options)
+        self.discovery_limits = discovery_limits or DiscoveryLimits()
+        self._tools: list[Any] | None = None
+        self._catalog_lock = asyncio.Lock()
 
-    async def connect(self) -> None:
-        if self._task is not None or self.session is not None:
-            if self._ready is not None:
-                await self._ready.wait()
-            return
-        self._ready = asyncio.Event()
-        self._error = None
-        if isinstance(self.server, StdioMCPServer):
-            self._task = asyncio.create_task(self._run_stdio())
-        elif isinstance(self.server, HttpMCPServer):
-            self._task = asyncio.create_task(self._run_http())
-        else:
-            raise TypeError("Unsupported MCP server config")
-        await self._ready.wait()
-        if self._error is not None:
-            raise self._error
+    async def list_tools(self, refresh: bool = False) -> list[Any]:
+        """Discover every page; errors retain the prior catalog without partial publication.
 
-    async def list_tools(self, refresh: bool = False) -> List[Any]:
-        await self.connect()
-        if self._tools is None or refresh:
-            result = await self.session.list_tools()
-            self._tools = list(getattr(result, "tools", []))
-        return self._tools
+        Limits bound decoded catalog bytes/counts and elapsed discovery time. SDK
+        transport buffering is not a wire-level memory limit. Returned snapshots
+        are deep copies so callers cannot mutate the cached schema definitions.
+        """
+        async with asyncio.timeout(self.discovery_limits.timeout):
+            async with self._catalog_lock:
+                await self.connect()
+                if self._tools is None or refresh:
+                    session = self.session
+                    tools = await discover(session, self.discovery_limits)
+                    if self.session is not session:
+                        raise MCPTransportError("MCP connection changed during discovery")
+                    self._tools = copy.deepcopy(tools)
+                return copy.deepcopy(self._tools)
 
     async def call_tool(self, name: str, arguments: dict) -> Any:
+        """Call once; protocol/transport exceptions stay distinct from tool failures."""
         await self.connect()
         t0 = time.monotonic()
-        result = await self.session.call_tool(name, arguments=arguments)
-        _bus.emit({"type": "mcp.tool", "server": _server_id(self.server), "name": name,
-                   "args": arguments, "latency_ms": int((time.monotonic() - t0) * 1000)})
+        try:
+            async with asyncio.timeout(self.request_timeout):
+                result = await self.session.call_tool(name, arguments=arguments)
+        except Exception as exc:
+            error = classify_error(exc)
+            if isinstance(error, MCPTransportError):
+                self.session = None
+                self.state = ConnectionState.FAILED
+                self._error = error
+                if self._task is not None:
+                    self._task.cancel()
+            if error is exc:
+                raise
+            raise error from exc
+        _bus.emit(
+            {
+                "type": "mcp.tool",
+                "server": self.server.name,
+                "name": name,
+                "args": arguments,
+                "latency_ms": int((time.monotonic() - t0) * 1000),
+            }
+        )
         return result
 
     async def close(self) -> None:
-        task, self._task = self._task, None
         self._tools = None
-        if task is None:
-            return
-        _bus.emit({"type": "mcp.disconnect", "server": _server_id(self.server)})
-        task.cancel()
-        with contextlib.suppress(Exception):
-            await task
-
-    async def _run_stdio(self) -> None:
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
-
-        assert self._ready is not None
-        assert isinstance(self.server, StdioMCPServer)
-        params = StdioServerParameters(
-            command=self.server.command,
-            args=self.server.args,
-            env=self.server.env,
-        )
-        try:
-            async with stdio_client(params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    self.session = session
-                    await session.initialize()
-                    _bus.emit({"type": "mcp.connect", "server": _server_id(self.server)})
-                    self._ready.set()
-                    await asyncio.get_running_loop().create_future()
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            self._error = exc
-            if not self._ready.is_set():
-                self._ready.set()
-        finally:
-            self.session = None
-
-    async def _run_http(self) -> None:
-        from mcp import ClientSession
-        from mcp.client.streamable_http import streamable_http_client
-
-        assert self._ready is not None
-        assert isinstance(self.server, HttpMCPServer)
-        try:
-            async with streamable_http_client(self.server.url, headers=self.server.headers) as (read, write, _):
-                async with ClientSession(read, write) as session:
-                    self.session = session
-                    await session.initialize()
-                    _bus.emit({"type": "mcp.connect", "server": _server_id(self.server)})
-                    self._ready.set()
-                    await asyncio.get_running_loop().create_future()
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            self._error = exc
-            if not self._ready.is_set():
-                self._ready.set()
-        finally:
-            self.session = None
-
-
-def _server_id(server: MCPServer) -> str:
-    if isinstance(server, StdioMCPServer):
-        return server.command
-    if isinstance(server, HttpMCPServer):
-        return server.url
-    return repr(server)
+        await super().close()
