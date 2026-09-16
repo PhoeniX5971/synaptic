@@ -1,35 +1,56 @@
 # Architecture
 
-`Model` selects an adapter through `core/_factory.py`. `core/_runner.py` delegates
-sync calls or aggregates async provider chunks, optionally writing `History` and
-executing one batch of tools. Adapters own SDK clients, schemas and conversion.
-`ToolRegistry` merges explicit bindings with scoped or legacy process-global tools.
+Model is the provider-neutral request boundary. `_factory.py` lazily imports only the
+selected adapter. Adapters own SDK clients and wire conversions; their capabilities
+make unsupported modes/media explicit. `_runner.py` handles invoke bookkeeping,
+`_model_stream.py` owns streaming cancellation/history, and `_completion.py` assembles
+usage, final text, finish metadata and deduplicated completed call IDs. Sync, async
+aggregation and streams share the same completion records.
 
-`Agent` owns a turn loop, session history, tool permissions, events and tool
-execution. It disables model autorun for invoke paths. Signal collection optionally
-parses a text DSL into tool proposals. Consumer-owned execution remains planned.
+ToolRegistry owns versioned definitions and exact catalog ownership. Registry reads
+are protected snapshots; Tool definitions are immutable. A request captures its tool
+view before generation. `Tool.prepare` resolves defaults and validates a captured
+Invocation. Agent authorizes that effective invocation; Executor owns the actual effect.
+LocalExecutor is useful by default, while proposal-only Model operations plus correlated
+external results allow applications to own execution and persistence completely.
 
-`MCPHub` owns named `MCPSession` objects and exposes discovered tools in a registry.
-Each session owns a dedicated asyncio task so SDK/AnyIO contexts enter and exit in
-the same task. Discovery/results/lifecycle are being hardened in M-002.
+Agent owns Session history, turn budgets and policy. It adds each user message once,
+prepares the turn's tool view, disables Model autorun and records tool results against
+stable IDs. Signal mode converts text DSL into proposals. EventBus observers receive
+copies and have a separate failure policy. Session outcome distinguishes completion,
+failure, cancellation and exhausted budgets. Model/History operations reject concurrent
+owners; separate instances are the unit of concurrent isolation.
 
-`Flow` and `Pipeline` sequence callables. `Retry` wraps calls and streams.
-`synaptic/logging` is the preserved opt-in diagnostic bus and JSONL sink; it is
-global and currently logs payloads without privacy guarantees (finding 18).
+History stores typed content references, completion metadata and complete tool exchanges.
+Window truncation drops whole entries, optionally using an application token counter.
+Version-1 dictionaries allow optional external storage. Repeated-result compaction is
+explicitly lossy. Persistence, desktop permissions, application grants and PC scheduling
+remain consumer responsibilities.
 
-History is in-memory and text-oriented. Persistence, desktop policy and grants
-belong to consumers. Current models/agents mutate shared state; do not concurrently
-share instances until isolation contracts are qualified.
+MCPHub owns bounded named sessions and registration transactions. Canonical identities
+are separate from provider aliases; each hub's exact registrations are independently
+removable. It prepares the whole catalog before publishing registry and loaded state,
+and notification failure cannot roll it back. `_hub_runtime.py` bounds workers,
+connections and operation time, drains active calls, evicts idle connections on access,
+and applies reconnect backoff without replaying a failed call.
 
-Completion assembly is now shared by Model async paths and Agent streaming.
-Unknown usage is explicit. Model binding changes rebuild provider schemas while
-registry-derived tools remain owned by the registry. Retry observes a strict
-first-yield boundary and requires safe invocation before retrying generation.
+MCPSession owns one asyncio task per connection attempt so SDK/AnyIO transport contexts
+enter and exit in the same task. `_connection.py` handles lifecycle/readiness, `_transport.py`
+opens official SDK transports, `_discovery.py` bounds and validates paginated catalogs,
+and `results.py` returns the lossless JSON envelope. Every dispatched call captures the
+attempt/session/task that may be invalidated by its failure. Late requests cannot
+invalidate newer owners. No shared credential-based pool or discovery cache exists.
 
-MCP transport ownership now has explicit new/connecting/connected/closing/closed/failed
-states. `MCPSession` owns a bounded, atomically published discovery cache; SDK
-transports are isolated in `_transport.py`, lifecycle in `_connection.py`.
-MCP tools return the versioned normalized envelope. Session catalog visibility is
-separate from the still-legacy MCPHub registry lifecycle, which is the next boundary
-to harden. Each HTTP session has its own client/headers; there is no shared
-credential-based cache or connection pool.
+ThreadScheduler offers explicit bounded offloading for synchronous functions in
+LocalExecutor, Flow/Pipeline and EventBus. Cancellation releases the awaiter, not the
+worker's capacity, until actual completion. Provider async APIs remain native except
+Together's bounded synchronous iterator bridge. Retry repeats only eligible generation
+before visible output, with finite backoff/deadlines; uncertain effects are replay barriers.
+
+DiagnosticBus uses context-local bus selection and correlation, suppresses payloads by
+default, and redacts before every sink. QueuedSink bounds delivery and reports loss/failure;
+JSONLWriter rotates retained files. These diagnostics are best-effort. Applications needing
+a durable effect journal must implement it at their executor/storage boundary.
+
+Public semantics and limits: [contracts](contracts.md). Provider differences:
+[capability matrix](provider-matrix.md). Executed evidence: [qualification](qualification.md).

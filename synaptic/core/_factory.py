@@ -1,15 +1,6 @@
 from typing import Any, List, Optional
 
-from ..providers import (
-    ClaudeAdapter,
-    DeepSeekAdapter,
-    GeminiAdapter,
-    OpenAIAdapter,
-    TogetherAdapter,
-    UniversalLLMAdapter,
-    VertexAdapter,
-    XAIAdapter,
-)
+from .. import providers
 from .base import History, ResponseFormat
 from .provider import Provider
 from .tool import Tool, ToolRegistry
@@ -33,6 +24,7 @@ def build_adapter(
 ) -> Any:
     kwargs = dict(
         model=model,
+        max_tokens=max_tokens,
         temperature=temperature,
         tools=tools,
         history=history,
@@ -44,24 +36,32 @@ def build_adapter(
     )
 
     if provider == Provider.CLAUDE:
-        return ClaudeAdapter(**kwargs, max_tokens=max_tokens)
+        return _adapter("ClaudeAdapter")(**kwargs)
     elif provider == Provider.OPENAI:
-        return OpenAIAdapter(**kwargs)
+        return _adapter("OpenAIAdapter")(**kwargs, base_url=base_url)
     elif provider == Provider.GEMINI:
-        return GeminiAdapter(**kwargs)
+        return _adapter("GeminiAdapter")(**kwargs)
     elif provider == Provider.VERTEX:
-        return VertexAdapter(
+        return _adapter("VertexAdapter")(
             **{**kwargs, "api_key": None},
             location=location,
             project=project,
         )
     elif provider == Provider.DEEPSEEK:
-        return DeepSeekAdapter(**kwargs)
+        return _adapter("DeepSeekAdapter")(**kwargs, base_url=base_url)
     elif provider == Provider.TOGETHER:
-        return TogetherAdapter(**kwargs)
+        return _adapter("TogetherAdapter")(**kwargs)
     elif provider == Provider.XAI:
-        return XAIAdapter(**kwargs)
+        return _adapter("XAIAdapter")(**kwargs)
     elif provider == Provider.UNIVERSAL_OPENAI:
-        return UniversalLLMAdapter(**kwargs, base_url=base_url or "")
+        return _adapter("UniversalLLMAdapter")(**kwargs, base_url=base_url or "")
     else:
         raise ValueError(f"Unknown provider: {provider!r}")
+
+
+def __getattr__(name):
+    return getattr(providers, name)
+
+
+def _adapter(name):
+    return globals()[name] if name in globals() else getattr(providers, name)

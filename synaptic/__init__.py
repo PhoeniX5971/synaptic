@@ -21,13 +21,16 @@ from .signal import (
     BlockDone,
 )
 
-from .providers import (
-    ClaudeAdapter,
-    GeminiAdapter,
-    OpenAIAdapter,
-    DeepSeekAdapter,
-    VertexAdapter,
-    TogetherAdapter,
-    UniversalLLMAdapter,
-    XAIAdapter,
-)
+from .core.invocation import Executor, Invocation, LocalExecutor
+from .run.scheduling import ThreadScheduler
+
+
+def __getattr__(name):
+    from . import providers
+
+    return getattr(providers, name)
+
+
+from .core.base.content import ContentBlock
+
+from .core.capabilities import Capabilities, UnsupportedCapability

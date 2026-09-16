@@ -56,3 +56,44 @@ registry refresh/removal semantics are still under T-006 review.
 
 Install the MCP extra (`mcp>=1.30,<2`). Only 1.30.0 is measured so far; 2.x is
 excluded pending an explicit API/protocol migration.
+
+## Completed follow-up contracts
+
+- Install only required provider extras; `pip install -e '.[all]'` installs all.
+  Core now requires Pydantic 2 and jsonschema, with Python >=3.11. SDK imports are lazy;
+  missing support names the required extra. `.env` loading belongs to the application.
+  The existing LICENSE text is included as package metadata without relicensing.
+- Models now have isolated registries. Explicit `tools=[...]`, `tool_registry=...`,
+  or `legacy_registry=True` replace reliance on implicit global decorators.
+  Agent tools must be registered with the Agent. Close disposable subscriptions
+  and call `await model.aclose()` when async clients were used.
+- Tool definitions/defaults/metadata are snapshots. Replace definitions rather than
+  assigning fields. `registry.all()` is read-only. Caller arguments override defaults;
+  policy sees validated effective arguments. Pydantic coercion is explicit behavior.
+- Use injectable Executors or Model.propose/apropose for externally owned effects.
+  Streaming proposals use autorun=False. ToolCall.id is native or generated and stable;
+  supply_results requires complete, unique correlation. Partial deltas cannot execute.
+- MCP unload uses exact ownership, and aliases containing separators/invalid characters
+  or exceeding 64 characters change to bounded hashes. Resolve via hub.resolve_alias.
+  load_all now returns per-server exceptions alongside successes. Routing registrations
+  are hub-owned. Unload does not revoke captured handles; remove drains and invalidates.
+- EventBus defaults to isolated observer errors; choose errors="raise" for fail-fast
+  behavior. Observer callbacks receive copies. Agent.session.outcome distinguishes
+  cancellation, failure and budget exhaustion; reset retains conversation history.
+- Finish reasons use portable categories; inspect extensions.native_finish_reason for
+  differing native values. xAI raw audio now fails explicitly. Read provider-matrix.md
+  for actual supported modalities and differences in structured output.
+- ContentBlock and version-1 history serialization preserve media and call correlation.
+  Optional token budgets need an application-supplied counter. Lossy duplicate-result
+  compaction stays opt-in. Interrupted streamed memories are marked incomplete.
+- Retry includes transient SDK/status classification, retry-after, exponential bounded
+  jitter and total deadlines. Sync deadlines cannot preempt a blocking call. Autorun
+  and first visible output remain replay barriers; generic @retry remains caller-owned.
+- Diagnostics default to metadata. Use DiagnosticBus(payloads=True, secrets=...,
+  redact=...) for intentional payload collection. Redaction precedes every sink.
+  scope(session_id=..., run_id=...) isolates correlation; QueuedSink bounds delivery,
+  exposes dropped/failures counters, and drains on close. JSONLWriter rotates files.
+
+The earlier statement that hub refresh remained under review is historical and is
+superseded by these contracts. See [runtime contracts](contracts.md) for lifecycle
+semantics and [qualification](qualification.md) for exact measured limits.

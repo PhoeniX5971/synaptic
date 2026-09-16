@@ -100,3 +100,40 @@ not already-running functions. Runtime rationale: docs/retry-policy.md.
 passed **41 tests**. Configuration/replay regressions remain intact. Git author/committer
 verified as PhoeniX5971 <moh845195@gmail.com>. Next: commit the integrated runtime
 contracts and then their locked distribution qualification/handoff.
+
+## S-006 — 2026-09-16 — reusable runtime contracts (T-006/T-007/T-008)
+
+Agent: Codex. Runtime changes resolve all four follow-up failures and complete the
+execution/provider/lifecycle/history/diagnostic boundaries. A dispatched MCP request
+can invalidate only its own attempt/session/task. Hub catalogs prepare before atomic
+exact-owner publication; observers cannot roll back state or skip cleanup. Worker,
+connection, idle/backoff and drain limits are explicit. In-flight refresh cannot
+resurrect an unloaded or closed catalog.
+
+Tool.prepare captures immutable validated effective arguments before policy, including
+defaults, typed values and callable identity. Executors/proposal-only APIs expose an
+application execution boundary with stable external result IDs. Models default to scoped
+registries; callbacks dispose, client cleanup attempts every owned client, and concurrent
+Model/History owners are rejected. Turn snapshots prevent refresh-time rebinding.
+
+Provider adapters now forward token limits, preserve IDs/usage/finish metadata, expose
+capabilities, close interrupted sources and use compatible SDK streaming APIs. Typed
+media/versioned history and complete exchanges preserve context. Agent outcomes distinguish
+failure/cancellation/budget exhaustion; partial stream history remains visibly incomplete.
+ThreadScheduler bounds actual outstanding workers. Diagnostics redact before any sink,
+use context-local correlation, bound queues/event size and expose sink loss/failure.
+
+Validation: full fresh locked-environment suite reached **238 passed** with two expected
+history warnings and two upstream Vertex/protobuf deprecations. Real local MCP stdio and
+HTTP fixtures passed. Native SDK MockTransport/typed fixtures cover all provider adapters;
+no live service qualification is claimed. After public callback/Optional annotation fixes
+and restoring positional registry.autotool compatibility, focused registry/tool suites
+passed **25 tests**. Ruff fatal checks and ten focused mypy modules passed; whole-project
+mypy improved from 108 errors/24 files to **81 errors/14 files**, not type-clean.
+
+All changed/new source modules are <=200 lines. Nine unrelated formatter changes were
+backed up, inspected and proven AST-equivalent before being removed. Automatic approval
+review rejected an earlier broad restore proposal; it did not execute. No user work was
+lost. Canonical runtime semantics, architecture, rationale, decisions, provider matrix
+and migrations now describe the implemented behavior. Author/committer identity verified.
+Next: commit final lock/install evidence and synchronize the final handoff records.

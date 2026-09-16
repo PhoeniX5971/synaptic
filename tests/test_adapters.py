@@ -2,6 +2,7 @@
 Tests for adapter history formatting with tool call/result linking.
 No real API calls are made.
 """
+
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -38,6 +39,7 @@ def _history_with_user_turn(message="hello"):
 class TestOpenAIAdapterToContents:
     def _adapter(self, instructions="", history=None):
         from synaptic.providers.openai_ import OpenAIAdapter
+
         with patch("synaptic.providers.openai_.model.OpenAI"):
             a = OpenAIAdapter(
                 model="gpt-4o",
@@ -53,12 +55,14 @@ class TestOpenAIAdapterToContents:
 
     def test_instructions_first(self):
         from synaptic.providers.openai_.helpers import history_messages
+
         a = self._adapter(instructions="be helpful")
         contents = history_messages(a.history, a.instructions, a.role_map)
         assert contents[0] == {"role": "system", "content": "be helpful"}
 
     def test_user_message(self):
         from synaptic.providers.openai_.helpers import history_messages
+
         h = _history_with_user_turn("hi there")
         a = self._adapter(history=h)
         contents = history_messages(a.history, a.instructions, a.role_map)
@@ -66,6 +70,7 @@ class TestOpenAIAdapterToContents:
 
     def test_tool_call_linked_to_result(self):
         from synaptic.providers.openai_.helpers import history_messages
+
         h = _history_with_tool_turn()
         a = self._adapter(history=h)
         contents = history_messages(a.history, a.instructions, a.role_map)
@@ -73,12 +78,13 @@ class TestOpenAIAdapterToContents:
         assistant = next(m for m in contents if m["role"] == "assistant")
         tool_msg = next(m for m in contents if m["role"] == "tool")
 
-        assert assistant["tool_calls"][0]["id"] == "call_0"
-        assert tool_msg["tool_call_id"] == "call_0"
+        assert assistant["tool_calls"][0]["id"] == h.entries[0].tool_calls[0].id
+        assert tool_msg["tool_call_id"] == h.entries[0].tool_calls[0].id
         assert tool_msg["name"] == "add"
 
     def test_multiple_tool_calls_all_linked(self):
         from synaptic.providers.openai_.helpers import history_messages
+
         h = History()
         tcs = [ToolCall("add", {"a": 1}), ToolCall("greet", {"name": "x"})]
         resp = ResponseMem(message="", created=TS, tool_calls=tcs)
@@ -90,13 +96,14 @@ class TestOpenAIAdapterToContents:
 
         tool_msgs = [m for m in contents if m["role"] == "tool"]
         assert len(tool_msgs) == 2
-        assert tool_msgs[0]["tool_call_id"] == "call_0"
-        assert tool_msgs[1]["tool_call_id"] == "call_1"
+        assert tool_msgs[0]["tool_call_id"] == h.entries[0].tool_calls[0].id
+        assert tool_msgs[1]["tool_call_id"] == h.entries[0].tool_calls[1].id
         assert tool_msgs[0]["name"] == "add"
         assert tool_msgs[1]["name"] == "greet"
 
     def test_no_tool_results_no_tool_messages(self):
         from synaptic.providers.openai_.helpers import history_messages
+
         h = History()
         tc = ToolCall("fn", {})
         resp = ResponseMem(message="", created=TS, tool_calls=[tc])
@@ -113,6 +120,7 @@ class TestOpenAIAdapterToContents:
 class TestDeepSeekAdapterToMessages:
     def _adapter(self, instructions="", history=None):
         from synaptic.providers.deepseek import DeepSeekAdapter
+
         with patch("synaptic.providers.deepseek.model.OpenAI"):
             a = DeepSeekAdapter(
                 model="deepseek-chat",
@@ -134,6 +142,7 @@ class TestDeepSeekAdapterToMessages:
 
     def test_tool_call_and_result_linked(self):
         from synaptic.providers.together.helpers import history_messages
+
         h = _history_with_tool_turn()
         a = self._adapter(history=h)
         msgs = history_messages(a)
@@ -141,8 +150,8 @@ class TestDeepSeekAdapterToMessages:
         assistant = next(m for m in msgs if m.get("role") == "assistant")
         tool_msg = next(m for m in msgs if m.get("role") == "tool")
 
-        assert assistant["tool_calls"][0]["id"] == "call_0"
-        assert tool_msg["tool_call_id"] == "call_0"
+        assert assistant["tool_calls"][0]["id"] == h.entries[0].tool_calls[0].id
+        assert tool_msg["tool_call_id"] == h.entries[0].tool_calls[0].id
         assert tool_msg["name"] == "add"
 
     def test_plain_user_message(self):
@@ -158,6 +167,7 @@ class TestDeepSeekAdapterToMessages:
 class TestTogetherAdapterToMessages:
     def _adapter(self, instructions="", history=None):
         from synaptic.providers.together import TogetherAdapter
+
         with patch("synaptic.providers.together.model.Together"):
             a = TogetherAdapter(
                 model="meta-llama/Llama-3",
@@ -181,11 +191,12 @@ class TestTogetherAdapterToMessages:
         assistant = next(m for m in msgs if m.get("role") == "assistant")
         tool_msg = next(m for m in msgs if m.get("role") == "tool")
 
-        assert assistant["tool_calls"][0]["id"] == "call_0"
-        assert tool_msg["tool_call_id"] == "call_0"
+        assert assistant["tool_calls"][0]["id"] == h.entries[0].tool_calls[0].id
+        assert tool_msg["tool_call_id"] == h.entries[0].tool_calls[0].id
 
     def test_plain_user_message(self):
         from synaptic.providers.together.helpers import history_messages
+
         h = _history_with_user_turn("hi")
         a = self._adapter(history=h)
         msgs = history_messages(a)
@@ -198,6 +209,7 @@ class TestTogetherAdapterToMessages:
 class TestUniversalLLMAdapterToContents:
     def _adapter(self, instructions="", history=None):
         from synaptic.providers.universal_openai import UniversalLLMAdapter
+
         with patch("synaptic.providers.universal_openai.model.OpenAI"):
             a = UniversalLLMAdapter(
                 model="llama",
@@ -226,8 +238,8 @@ class TestUniversalLLMAdapterToContents:
         assistant = next(m for m in contents if m.get("role") == "assistant")
         tool_msg = next(m for m in contents if m.get("role") == "tool")
 
-        assert assistant["tool_calls"][0]["id"] == "call_0"
-        assert tool_msg["tool_call_id"] == "call_0"
+        assert assistant["tool_calls"][0]["id"] == h.entries[0].tool_calls[0].id
+        assert tool_msg["tool_call_id"] == h.entries[0].tool_calls[0].id
         assert tool_msg["name"] == "add"
 
 
@@ -238,6 +250,7 @@ class TestGeminiAdapterToContents:
     def _adapter(self, history=None, instructions=""):
         from synaptic.providers.gemini import GeminiAdapter
         from google.genai import types
+
         with patch("synaptic.providers.gemini.model.genai"):
             a = GeminiAdapter(
                 model="gemini-2.5-flash",
@@ -270,6 +283,7 @@ class TestGeminiAdapterToContents:
 
     def test_model_turn_has_function_call_part(self):
         from google.genai import types
+
         h = _history_with_tool_turn()
         a = self._adapter(history=h)
         contents = a.to_contents()
@@ -280,6 +294,7 @@ class TestGeminiAdapterToContents:
 
     def test_user_turn_has_function_response_part(self):
         from google.genai import types
+
         h = _history_with_tool_turn()
         a = self._adapter(history=h)
         contents = a.to_contents()
@@ -308,8 +323,11 @@ class TestGeminiAdapterToContents:
 class TestVertexAdapterToContents:
     def _adapter(self, history=None):
         from synaptic.providers.vertex import VertexAdapter
-        with patch("synaptic.providers.vertex.model.vertex_init"), \
-             patch("synaptic.providers.vertex.model.GenerativeModel"):
+
+        with (
+            patch("synaptic.providers.vertex.model.vertex_init"),
+            patch("synaptic.providers.vertex.model.GenerativeModel"),
+        ):
             a = VertexAdapter(
                 model="gemini-pro",
                 project="fake-project",
@@ -339,6 +357,7 @@ class TestVertexAdapterToContents:
 
     def test_user_turn_has_function_response(self):
         from vertexai.generative_models import Part
+
         h = _history_with_tool_turn(tool_name="multiply", tool_result=6)
         a = self._adapter(history=h)
         contents = a.to_contents()

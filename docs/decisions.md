@@ -33,3 +33,34 @@ liveness instead of depending on private SDK receive-task state. Preserve owner
 task context-manager lifetime, quarantine slow shutdown and expose finite limits.
 Qualify the official 1.30.0 SDK; bound the extra below 2.x without claiming every
 future 1.x version or every protocol extension has been tested.
+
+## D-005 — 2026-09-16: validated execution and exact ownership
+
+Resolve/default/validate one immutable invocation before policy and capture tool definitions
+per turn. Scoped registries are the default; legacy globals require explicit compatibility.
+Registry publication is atomic in the supported event-loop scope; observer failure is
+separate from publication. MCP identity is canonical metadata with bounded aliases and
+exact hub ownership. Unload visibility is not revocation; removal drains and invalidates.
+
+## D-006 — 2026-09-16: bounded scheduling and explicit outcomes
+
+Keep synchronous callables inline unless an explicit bounded scheduler is provided.
+Cancellation cannot prove an effect did not occur and does not free a running thread's
+capacity. Reject concurrent Model/History owners instead of promising transparent isolation.
+Retain incomplete streamed history and expose failed/cancelled/exhausted Session outcomes.
+Observers are independent from policy; strict observation is opt-in and can interrupt work.
+
+## D-007 — 2026-09-16: optional SDKs and measured qualification
+
+Core depends on Pydantic/jsonschema; SDKs belong to extras and lazy imports. uv.lock pins
+development/CI resolution; library consumers retain bounded ranges. Qualify exact installed
+SDKs and the official MCP 1.30.0 protocol path with local transports. SDK mock-HTTP/typed
+fixtures do not claim live-model support. Do not infer protocol support from version ranges.
+The existing license text is packaged without changing its grant.
+
+## D-008 — 2026-09-16: metadata diagnostics and replay limits
+
+DiagnosticBus defaults to metadata, redacts before every sink, uses scoped correlation,
+and offers bounded queue/rotation with visible loss. Durable effect recording remains
+application-owned. Retry is bounded transient generation retry before output and without
+autorun effects; it is not a general automatic effect-recovery mechanism.

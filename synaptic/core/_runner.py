@@ -1,4 +1,4 @@
-import inspect
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Any, List, Optional
@@ -7,70 +7,79 @@ from .base import ResponseMem, UserMem
 from ._awaitables import require_sync
 from ._completion import Completion
 from .tool import Tool, ToolCall
+from .invocation import LocalExecutor
+from .base.content import media_content
+from .capabilities import Capabilities, UnsupportedCapability
 from ..logging import _bus
 
 
-def run_tools_sync(tools: List[Tool], blacklist: List[str], tool_calls: List[ToolCall]) -> List[Any]:
-    results = []
-    tool_map = {t.name: t for t in tools}
-    for call in tool_calls:
-        if not isinstance(call, ToolCall):
-            results.append({"error": "Invalid tool call format"})
-            continue
-        name, args = call.name, call.args
-        tool = tool_map.get(name)
-        if tool and name not in blacklist:
-            if tool.is_async:
-                raise RuntimeError(f"Tool '{name}' is async, cannot run in sync invoke()")
-            try:
-                results.append({"name": name, "result": require_sync(tool.run(**args), "Async tool result requires ainvoke()")})
-            except Exception as e:
-                results.append({"name": name, "error": str(e)})
-        else:
-            results.append({"name": name, "error": "Tool not registered or blacklisted"})
-    return results
-
-
-async def run_tools_async(tools: List[Tool], blacklist: List[str], tool_calls: List[ToolCall]) -> List[Any]:
-    results = []
-    tool_map = {t.name: t for t in tools}
-    for call in tool_calls:
-        if not isinstance(call, ToolCall):
-            results.append({"error": "Invalid tool call format"})
-            continue
-        name, args = call.name, call.args
-        tool = tool_map.get(name)
-        if tool and name not in blacklist:
-            try:
-                res = tool.run(**args)
-                if inspect.isawaitable(res):
-                    res = await res
-                results.append({"name": name, "result": res})
-            except Exception as e:
-                results.append({"name": name, "error": str(e)})
-        else:
-            results.append({"name": name, "error": "Tool not registered or blacklisted"})
-    return results
+from ._tool_execution import run_tools_sync, run_tools_async
 
 
 def _ctx(model) -> list:
     return [{"role": m.role, "content": m.message} for m in model.history.entries]
 
 
-def invoke(model, prompt: Optional[str], role: str = "user", images=None, audio=None,
-           autorun: bool = None, automem: bool = None, **kwargs) -> ResponseMem:
+def _check(model, mode, images, audio):
+    capabilities = getattr(model.llm, "capabilities", None)
+    if isinstance(capabilities, Capabilities):
+        capabilities.check(
+            mode,
+            images=images,
+            audio=audio,
+            structured=getattr(model, "response_format", "none") != "none",
+        )
+        if model.llm.synaptic_tools and not capabilities.tools:
+            raise UnsupportedCapability("This adapter does not implement tools")
+        for memory in model.history.entries:
+            for block in getattr(memory, "content", ()):
+                if block.kind == "resource" or (
+                    block.kind in ("image", "audio")
+                    and not getattr(
+                        capabilities, block.kind + "s" if block.kind == "image" else "audio"
+                    )
+                ):
+                    raise UnsupportedCapability("History contains unsupported media")
+            if getattr(memory, "tool_calls", None) and len(memory.tool_results) != len(
+                memory.tool_calls
+            ):
+                raise ValueError("Supply every tool result before continuing this history")
+
+
+def invoke(
+    model,
+    prompt: Optional[str],
+    role: str = "user",
+    images=None,
+    audio=None,
+    autorun: bool | None = None,
+    automem: bool | None = None,
+    **kwargs,
+) -> ResponseMem:
+    _check(model, "invoke", images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
+    tools = list(getattr(model.llm, "synaptic_tools", ()))
     created = datetime.now().astimezone(timezone.utc)
     t0 = time.monotonic()
     memory = model.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
 
     if _bus.active():
-        _bus.emit({"type": "model.invoke", "provider": str(model.provider), "model": model.model,
-                   "prompt": prompt, "role": role, "context": _ctx(model), "response": memory.message,
-                   "input_tokens": memory.input_tokens, "output_tokens": memory.output_tokens,
-                   "latency_ms": int((time.monotonic() - t0) * 1000)})
+        _bus.emit(
+            {
+                "type": "model.invoke",
+                "provider": str(model.provider),
+                "model": model.model,
+                "prompt": prompt,
+                "role": role,
+                "context": _ctx(model),
+                "response": memory.message,
+                "input_tokens": memory.input_tokens,
+                "output_tokens": memory.output_tokens,
+                "latency_ms": int((time.monotonic() - t0) * 1000),
+            }
+        )
 
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
@@ -78,94 +87,97 @@ def invoke(model, prompt: Optional[str], role: str = "user", images=None, audio=
     if _autorun and memory.tool_calls:
         if any(t.is_async for t in model.llm.synaptic_tools):
             raise RuntimeError("invoke() cannot run async tools; use ainvoke()")
-        memory.tool_results = run_tools_sync(model.llm.synaptic_tools, model.blacklist, memory.tool_calls)
+        memory.tool_results = run_tools_sync(
+            tools,
+            model.blacklist,
+            memory.tool_calls,
+            getattr(model, "executor", None),
+        )
     else:
         memory.tool_results = []
 
-    if _automem and model.history and prompt is not None:
-        model.history.add(UserMem(message=prompt, role=role, created=created))
+    if _automem and model.history is not None:
+        if prompt is not None or images or audio:
+            model.history.add(
+                UserMem(
+                    message=prompt or "",
+                    role=role,
+                    created=created,
+                    content=media_content(images, audio),
+                )
+            )
         model.history.add(memory)
 
     return memory
 
 
-async def ainvoke(model, prompt: Optional[str], role: str = "user", images=None, audio=None,
-                  autorun: bool = None, automem: bool = None, **kwargs) -> ResponseMem:
+async def ainvoke(
+    model,
+    prompt: Optional[str],
+    role: str = "user",
+    images=None,
+    audio=None,
+    autorun: bool | None = None,
+    automem: bool | None = None,
+    **kwargs,
+) -> ResponseMem:
+    _check(model, "ainvoke", images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
+    tools = list(getattr(model.llm, "synaptic_tools", ()))
     created = datetime.now().astimezone(timezone.utc)
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
     t0 = time.monotonic()
     completion = Completion()
-    async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs):
+    async for chunk in model.llm.astream(
+        prompt=prompt, role=role, images=images, audio=audio, **kwargs
+    ):
         completion.add(chunk)
 
     memory = completion.memory(created)
 
     if _bus.active():
-        _bus.emit({"type": "model.ainvoke", "provider": str(model.provider), "model": model.model,
-                   "prompt": prompt, "role": role, "context": _ctx(model), "response": completion.text,
-                   "input_tokens": memory.input_tokens, "output_tokens": memory.output_tokens,
-                   "latency_ms": int((time.monotonic() - t0) * 1000)})
+        _bus.emit(
+            {
+                "type": "model.ainvoke",
+                "provider": str(model.provider),
+                "model": model.model,
+                "prompt": prompt,
+                "role": role,
+                "context": _ctx(model),
+                "response": completion.text,
+                "input_tokens": memory.input_tokens,
+                "output_tokens": memory.output_tokens,
+                "latency_ms": int((time.monotonic() - t0) * 1000),
+            }
+        )
 
     if _autorun and memory.tool_calls:
-        memory.tool_results = await run_tools_async(model.llm.synaptic_tools, model.blacklist, memory.tool_calls)
+        memory.tool_results = await run_tools_async(
+            tools,
+            model.blacklist,
+            memory.tool_calls,
+            getattr(model, "executor", None),
+        )
     else:
         memory.tool_results = []
 
-    if _automem and model.history and prompt is not None:
-        model.history.add(UserMem(message=prompt, role=role, created=created))
+    if _automem and model.history is not None:
+        if prompt is not None or images or audio:
+            model.history.add(
+                UserMem(
+                    message=prompt or "",
+                    role=role,
+                    created=created,
+                    content=media_content(images, audio),
+                )
+            )
         model.history.add(memory)
 
     return memory
 
 
-async def astream(model, prompt: Optional[str], role: str = "user", images=None, audio=None,
-                  autorun: bool = None, automem: bool = None, abort=None, **kwargs):
-    if role not in ("user", "assistant", "system"):
-        raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
-
-    if not hasattr(model.llm, "astream"):
-        raise NotImplementedError("Underlying model does not implement astream()")
-
-    _autorun = autorun if autorun is not None else model.autorun
-    _automem = automem if automem is not None else model.automem
-
-    if _bus.active():
-        _bus.emit({"type": "model.stream.start", "provider": str(model.provider), "model": model.model,
-                   "prompt": prompt, "role": role, "context": _ctx(model)})
-
-    created = datetime.now().astimezone(timezone.utc)
-    t0 = time.monotonic()
-    completion = Completion()
-    tool_results: List[Any] = []
-
-    async for chunk in model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, abort=abort, **kwargs):
-        if abort and abort.is_set():
-            return
-        completion.add(chunk)
-        if not chunk.is_final and chunk.text:
-            if _bus.stream_chunks and _bus.active():
-                _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
-        if getattr(chunk, "function_call", None):
-            if _autorun:
-                try:
-                    tr = await run_tools_async(model.llm.synaptic_tools, model.blacklist, [chunk.function_call])
-                    tool_results.extend(tr)
-                except Exception as e:
-                    tool_results.append({"name": chunk.function_call.name, "error": str(e)})
-        yield chunk
-
-    if _bus.active():
-        _bus.emit({"type": "model.stream.end", "provider": str(model.provider), "model": model.model,
-                   "response": completion.text, "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
-                   "latency_ms": int((time.monotonic() - t0) * 1000)})
-
-    final_mem = completion.memory(created, tool_results)
-
-    if _automem and model.history and prompt is not None:
-        model.history.add(UserMem(message=prompt, role=role, created=created))
-        model.history.add(final_mem)
+from ._model_stream import astream

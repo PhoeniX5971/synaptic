@@ -1,27 +1,54 @@
-import inspect
+"""Observational events with explicit failure policy and disposable subscriptions."""
+
+import copy
+import warnings
+
 from ..core._awaitables import require_sync
-from typing import Any, Callable, Dict, List
+from ..core._registry import Subscription
+from ..run.scheduling import call_async
 
 
 class EventBus:
-    """Small event dispatcher used by agents and streaming integrations."""
+    def __init__(self, *, errors="warn", on_error=None, scheduler=None):
+        if errors not in ("warn", "raise"):
+            raise ValueError("errors must be warn or raise")
+        self._handlers = {}
+        self.errors, self.on_error, self.scheduler = errors, on_error, scheduler
 
-    def __init__(self) -> None:
-        self._handlers: Dict[str, List[Callable[..., Any]]] = {}
+    def on(self, event, fn):
+        handlers = self._handlers.setdefault(event, [])
+        handlers.append(fn)
+        return Subscription(lambda: handlers.remove(fn) if fn in handlers else None)
 
-    def on(self, event: str, fn: Callable[..., Any]) -> None:
-        """Register a sync or async handler for an event name."""
-        self._handlers.setdefault(event, []).append(fn)
+    def _failed(self, exc):
+        if self.errors == "raise":
+            raise exc
+        try:
+            if self.on_error:
+                require_sync(self.on_error(exc), "Error handlers must be synchronous")
+            else:
+                warnings.warn("Event observer failed: " + type(exc).__name__, RuntimeWarning)
+        except Exception:
+            pass
 
-    def emit(self, event: str, *args: Any) -> None:
-        """Emit an event to sync handlers."""
-        for fn in self._handlers.get(event, []):
-            result = fn(*args)
-            require_sync(result, "Async event handlers require aemit()")
+    def emit(self, event, *args):
+        for fn in tuple(self._handlers.get(event, [])):
+            try:
+                result = fn(*copy.deepcopy(args))
+                require_sync(result, "Async event handlers require aemit()")
+            except RuntimeError as exc:
+                if str(exc) == "Async event handlers require aemit()":
+                    raise
+                self._failed(exc)
+            except Exception as exc:
+                self._failed(exc)
 
-    async def aemit(self, event: str, *args: Any) -> None:
-        """Emit an event and await handlers that return awaitables."""
-        for fn in self._handlers.get(event, []):
-            result = fn(*args)
-            if inspect.isawaitable(result):
-                await result
+    async def aemit(self, event, *args):
+        for fn in tuple(self._handlers.get(event, [])):
+            try:
+                await call_async(fn, *copy.deepcopy(args), scheduler=self.scheduler)
+            except Exception as exc:
+                self._failed(exc)
+
+    def close(self):
+        self._handlers.clear()

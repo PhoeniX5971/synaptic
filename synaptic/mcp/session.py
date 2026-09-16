@@ -46,13 +46,17 @@ class MCPSession(Connection):
     async def call_tool(self, name: str, arguments: dict) -> Any:
         """Call once; protocol/transport exceptions stay distinct from tool failures."""
         await self.connect()
+        dispatch = (self._attempt, self.session, self._task)
         t0 = time.monotonic()
         try:
             async with asyncio.timeout(self.request_timeout):
-                result = await self.session.call_tool(name, arguments=arguments)
+                result = await dispatch[1].call_tool(name, arguments=arguments)
         except Exception as exc:
             error = classify_error(exc)
-            if isinstance(error, MCPTransportError):
+            if isinstance(error, MCPTransportError) and all(
+                old is current
+                for old, current in zip(dispatch, (self._attempt, self.session, self._task))
+            ):
                 self.session = None
                 self.state = ConnectionState.FAILED
                 self._error = error
@@ -65,6 +69,7 @@ class MCPSession(Connection):
             {
                 "type": "mcp.tool",
                 "server": self.server.name,
+                "attempt_id": id(dispatch[0]),
                 "name": name,
                 "args": arguments,
                 "latency_ms": int((time.monotonic() - t0) * 1000),

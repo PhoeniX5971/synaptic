@@ -1,5 +1,6 @@
 import inspect
 from ..core._awaitables import require_sync
+from .scheduling import call_async
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -49,7 +50,8 @@ class Flow:
             return NodeResult(output=state, next="agent_a" if "A" in r.message else "agent_b")
     """
 
-    def __init__(self, max_steps: int = 50):
+    def __init__(self, max_steps: int = 50, scheduler=None):
+        self.scheduler = scheduler
         self._nodes: Dict[str, Callable] = {}
         self._entry: Optional[str] = None
         self.max_steps = max_steps
@@ -100,7 +102,7 @@ class Flow:
 
         for _ in range(self.max_steps):
             node = self._get_node(current)
-            result = node(state)
+            result = await call_async(node, state, scheduler=self.scheduler)
 
             if inspect.isawaitable(result):
                 result = await result
@@ -125,9 +127,7 @@ class Flow:
 
     def _get_node(self, name: str) -> Callable:
         if name not in self._nodes:
-            raise ValueError(
-                f"Node '{name}' not found. Registered nodes: {list(self._nodes)}"
-            )
+            raise ValueError(f"Node '{name}' not found. Registered nodes: {list(self._nodes)}")
         return self._nodes[name]
 
 
@@ -149,7 +149,8 @@ class Pipeline:
         final = await pipeline.arun("Write a report on climate change.")
     """
 
-    def __init__(self, steps: List[Callable]):
+    def __init__(self, steps: List[Callable], scheduler=None):
+        self.scheduler = scheduler
         self.steps = steps
 
     def run(self, state: Any) -> Any:
@@ -161,7 +162,7 @@ class Pipeline:
 
     async def arun(self, state: Any) -> Any:
         for step in self.steps:
-            result = step(state)
+            result = await call_async(step, state, scheduler=self.scheduler)
             if inspect.isawaitable(result):
                 result = await result
             state = result

@@ -2,6 +2,8 @@ import json
 from typing import Any, Dict, List
 
 from ...core.base import ResponseMem
+from ...core.base.content import references, message_text
+from .._media import claude_content
 
 
 def tool_id(turn_index: int, call_index: int) -> str:
@@ -15,31 +17,44 @@ def history_messages(history) -> List[Dict[str, Any]]:
     for turn_idx, memory in enumerate(history.effective_mems()):
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             content: List[Dict[str, Any]] = []
-            if memory.message:
-                content.append({"type": "text", "text": memory.message})
+            if message_text(memory):
+                content.append({"type": "text", "text": message_text(memory)})
             for call_idx, call in enumerate(memory.tool_calls):
-                content.append({
-                    "type": "tool_use",
-                    "id": tool_id(turn_idx, call_idx),
-                    "name": call.name,
-                    "input": call.args,
-                })
+                content.append(
+                    {
+                        "type": "tool_use",
+                        "id": call.id,
+                        "name": call.name,
+                        "input": call.args,
+                    }
+                )
             messages.append({"role": "assistant", "content": content})
             results = getattr(memory, "tool_results", None) or []
             result_content: List[Dict[str, Any]] = []
             for call_idx, call in enumerate(memory.tool_calls):
                 result = results[call_idx] if call_idx < len(results) else {}
-                resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
-                result_content.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_id(turn_idx, call_idx),
-                    "content": str(resp),
-                })
+                resp = (
+                    result.get("result", result.get("error", ""))
+                    if isinstance(result, dict)
+                    else str(result)
+                )
+                result_content.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call.id,
+                        "content": str(resp),
+                    }
+                )
             if result_content:
                 messages.append({"role": "user", "content": result_content})
         else:
             role = "assistant" if memory.role == "assistant" else "user"
-            messages.append({"role": role, "content": memory.message})
+            messages.append(
+                {
+                    "role": role,
+                    "content": claude_content(message_text(memory), references(memory, "image")),
+                }
+            )
     return messages
 
 
@@ -50,7 +65,6 @@ def schema_for(schema: Any) -> Any:
 
 
 def safe_json(data: str) -> Dict[str, Any]:
-    try:
-        return json.loads(data) if data else {}
-    except json.JSONDecodeError:
-        return {}
+    from .._chat import arguments
+
+    return arguments(data)
