@@ -17,7 +17,9 @@ def find_product(sku: str) -> dict:
     return {"sku": sku, "stock": 12}
 ```
 
-Synaptic infers simple parameter types from annotations:
+Synaptic uses Pydantic 2 for parameter schemas, including nested collections/models,
+Optional/unions, Literal and enums. Unsupported annotations raise TypeError.
+Primitive mappings include:
 
 - `str` -> `string`
 - `int` -> `integer`
@@ -67,7 +69,7 @@ from synaptic import ToolRegistry
 
 registry = ToolRegistry()
 
-@registry.autotool("Get the current tenant id")
+@registry.autotool(description="Get the current tenant id")
 def tenant_id() -> str:
     return "tenant_a"
 
@@ -86,3 +88,8 @@ Tool execution returns dictionaries:
 ```
 
 These are stored on `ResponseMem.tool_results`.
+
+Tool definitions are immutable snapshots. Defaults merge and arguments validate before
+Agent permission checks. Callers may override defaults; policy sees the effective values.
+Model autorun result records retain the shown shape; Agent records also include call_id.
+See [contracts](../contracts.md) for Executor injection and [migration](../migration.md).

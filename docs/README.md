@@ -38,3 +38,7 @@ See [migration notes](migration.md) for changed public contracts.
 
 Measured evidence: [qualification](qualification.md). Scope/status by original finding:
 [finding report](finding-report.md).
+
+Current runtime APIs: [contracts](contracts.md), [provider matrix](provider-matrix.md),
+the [retry policy](retry-policy.md), and the accepted [follow-up brief](followup-brief.md). `next-steps.md` is the compact
+portable handoff; `progress-log.md` is append-only implementation evidence.

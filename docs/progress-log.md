@@ -137,3 +137,31 @@ review rejected an earlier broad restore proposal; it did not execute. No user w
 lost. Canonical runtime semantics, architecture, rationale, decisions, provider matrix
 and migrations now describe the implemented behavior. Author/committer identity verified.
 Next: commit final lock/install evidence and synchronize the final handoff records.
+
+## S-007 — 2026-09-16 — distribution qualification and final handoff (T-009)
+
+Agent: Codex. Local retry commit: 68da55c; integrated runtime commit: 76b11f9.
+Built wheel/sdist and verified the uv.lock development environment. The final runtime
+suite again passed **238 tests** after the last public API compatibility adjustment;
+all three real local MCP transports are included. Focused mypy (ten modules), fatal Ruff,
+source module <=200-line check and whitespace checks passed. Whole-project mypy remains
+**81 errors in 14 files**, documented without claiming those are all inherited.
+
+The wheel passed ten isolated installations: core, MCP, each declared provider extra,
+and all extras. Each used isolated Python outside the checkout, lazy-import assertions,
+selected provider imports and uv pip check. Core has no unrelated OpenAI SDK and reports
+an actionable missing-extra error. The committed runtime was rebuilt and the final matrix
+repeated. Lock metadata/build downloads needed network permission after sandbox DNS
+failures. A missing old /tmp constraint export caused one install attempt to fail;
+regenerating it resolved the setup failure. No provider calls or credentials were used.
+
+Updated roadmap/development status, all nineteen findings, issue/qualification limits,
+technology/testing guides, examples, architecture/rationale/migrations and compact handoff.
+Canonical project memory lives in docs; archived history/raw local logs are preserved.
+Library ranges do not imply unmeasured protocol/provider/platform support. Measured MCP
+remains SDK 1.30.0 / protocol 2025-11-25, Python 3.13.8 Linux. Future live-service/type/platform
+qualification is explicit release work, not an unfinished item from the accepted scope.
+
+All accepted hardening findings are implemented. No publishing, remote/history rewriting,
+sibling-project changes or consumer desktop policy were performed. The user owns publishing.
+Author and committer identity verified before each local commit.

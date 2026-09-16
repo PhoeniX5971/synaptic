@@ -16,3 +16,8 @@ fixtures need a supported return annotation (`dict[str, str]`, not bare `dict`).
 A socket PermissionError or stdio handshake timeout under the sandbox can be an
 environment restriction: rerun the same local-only test with authorized permissions
 before changing production transport behavior.
+
+For thread/mock-HTTP stalls, the sandbox can block event-loop cross-thread wakeups.
+Rerun the bounded local fixture with ordinary permissions before changing its scheduler.
+For external effects, inspect the stable call_id and incomplete history marker; never
+infer absence of effects from cancellation or automatically replay a failed request.

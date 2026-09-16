@@ -9,12 +9,14 @@ multi-turn agents, streaming events, and lightweight workflow helpers.
 ```bash
 git clone https://github.com/PhoeniX5971/synaptic.git
 cd synaptic
-pip install -e .
+pip install -e ".[openai]"
 ```
 
-Install the SDKs for the providers you plan to use. For example, OpenAI-backed
-models need the OpenAI SDK and an API key passed to `Model(api_key=...)` or
-configured in your environment.
+Python 3.11+ is required. Core installation (`pip install -e .`) includes no provider SDKs.
+Choose extras: `openai`, `deepseek`, `claude`, `gemini`, `vertex`, `together`, `xai`,
+`mcp`, or `all`. Pass credentials explicitly or configure the chosen SDK environment;
+Synaptic does not load `.env` files. See [runtime contracts](docs/contracts.md),
+[migrations](docs/migration.md), and [measured qualification](docs/qualification.md).
 
 ## First Model Call
 
@@ -62,7 +64,7 @@ finished.
 ```python
 from synaptic import Agent
 
-agent = Agent(model, max_turns=5)
+agent = Agent(model, tools=[add], max_turns=5)
 res = agent.run("Calculate 2 + 3 and explain the result")
 print(res.message)
 ```

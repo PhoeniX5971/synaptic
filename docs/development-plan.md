@@ -1,17 +1,17 @@
 # Development plan
 
-| Task | Status | Work and gate |
+| Task | Status | Implemented work and gate |
 | --- | --- | --- |
-| T-001 | done | Preserve baseline and establish canonical records; S-001 |
-| T-002 | done | Reproduce BUG-001–007 against current tree before fixes |
-| T-003 | done | Preserve usage; awaitables; explicit binding replacement/removal |
-| T-004 | done | Prevent streamed replay and validate retry configuration |
-| T-005 | done | Lossless MCP results, bounded discovery and owner-task lifecycle |
-| T-006 | planned | Hub concurrency/ownership/identity and scoped registry cleanup |
-| T-007 | planned | Validated schemas, injected executor and provider capabilities |
-| T-008 | planned | Cancellation outcomes, history isolation, offloading and private logging |
-| T-009 | planned | Multimodal history, optional SDKs, install matrix and migration qualification |
+| T-001 | done | Preserve baseline, clean directory and establish production/handoff records |
+| T-002 | done | Seven original failing regressions |
+| T-003 | done | Usage/awaitables/explicit bindings |
+| T-004 | done | Stream replay boundary and retry configuration |
+| T-005 | done | Lossless MCP results, paginated discovery and owner lifecycle |
+| T-006 | done | Four follow-up reproductions, exact hub ownership, bounded lifecycle, subscriptions |
+| T-007 | done | Validated immutable invocation, executors, capabilities and SDK fixtures |
+| T-008 | done | Explicit scheduling/outcomes, privacy, observer policies and finite retries |
+| T-009 | done | Multimodal history, optional SDKs, lock/install matrix and measured handoff |
 
-Follow the brief's implementation order. First tranche is T-001–T-005. Later
-milestones remain planned, not silently accepted or marked complete. Add related
-boundary regressions while fixing defects; keep unrelated expansion in this plan.
+All requested findings are implemented and individually mapped to tests in
+finding-report.md. Production records are the portable memory; local transcripts
+and hooks remain machine-specific. Only the user publishes.

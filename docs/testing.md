@@ -1,28 +1,29 @@
 # Testing and qualification
 
-Run deterministic tests from the repository root:
+Use the reproducible environment:
 
 ```sh
-.venv/bin/python -m pytest tests -q
+uv sync --frozen --all-extras
+uv run --frozen pytest tests -q -W error::RuntimeWarning
 ```
 
-Tests use `asyncio.run`; pytest-asyncio is not required. Provider tests stub clients
-and make no real calls. Live exploratory scripts live in `examples/live/` and are
-never collected. Do not read `.env` or use credentials for deterministic checks.
+The suite passed 238 tests on Python 3.13.8 Linux. Tests use asyncio.run; no
+pytest-asyncio plugin is required. Provider fixtures use installed SDK types or
+httpx.MockTransport, not live credentials. Manual demos under examples/live are never
+collected. Do not read .env or contact providers for deterministic checks.
 
-Baseline selected suite: 102 passed, 9 failed, 5 warnings (S-001). Failures reflect
-stale expectations; new seven-defect regressions must fail before fixes.
+Real MCP stdio/subprocess and loopback HTTP tests require ordinary local permissions.
+The managed sandbox may also prevent cross-thread event-loop wakeups used by scheduler
+and mock-HTTP fixtures. A sandbox timeout is not by itself an implementation failure;
+rerun the same local fixture with approved permissions. Do not skip these cases in
+release qualification. The real transports perform no external service requests.
 
-No existing real MCP fixtures, clean-install matrix, type-check baseline or lockfile
-was found. Track added commands/versions/results below as they are actually run.
-Do not infer interoperability or scalability from mock tests.
+Follow-up regressions cover dispatch generations, atomic ownership/publication and
+immutable effective arguments. Further suites cover bounded workers/draining, turn
+snapshots, registry isolation, scheduler cancellation, Session outcomes, SDK parity,
+media/history correlation, retry timing and diagnostic privacy/size/delivery.
 
-## Current checks
-
-See [qualification](qualification.md) for exact before/after results and versions.
-The complete suite includes real local transports; in a restricted sandbox run
-`--ignore=tests/test_mcp_transports.py` for in-process tests, and run transport tests
-with local subprocess/socket permissions. RuntimeWarning is treated as an error
-in the final suite command. The only remaining warnings are expected history
-truncation notices. MCP tests require the MCP extra; live-provider demos remain
-manual. No external provider calls are part of qualification.
+See qualification.md for exact commands, dependency versions, final wheel install matrix,
+warning explanations and static-check limits. `scripts/check_installs.py` creates only
+isolated temporary environments. Tests need all extras; a core installation is checked
+separately rather than expected to run provider fixture modules without their SDKs.

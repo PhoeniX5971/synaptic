@@ -1,14 +1,19 @@
-# Next steps
+# Handoff / next steps
 
-Start T-006 by reproducing MCPHub refresh/removal ownership failures: overlapping
-server-name prefixes, failed replacement registration, and an in-flight call while
-unloading. Preserve a catalog until a complete replacement can publish atomically.
+The accepted hardening scope is implemented. Start with finding-report.md,
+qualification.md, contracts.md and migration.md; the latest progress entries record
+before/after evidence and local commits. Runtime is committed as `76b11f9`; the
+independent retry policy is `68da55c`. The full locked-environment suite passed
+238 tests, including three real MCP transports; ten independent install cases passed.
 
-Then implement exact ownership and bounded hub startup/discovery, with explicit
-unload/disconnect/remove/close semantics. Session primitives are qualified on MCP
-1.30.0, but the hub is still sequential and prefix-based. Coordinate registry
-subscription cleanup with adapter disposal rather than freezing merged tool views.
+For a new checkout, run `uv sync --frozen --all-extras`, then
+`uv run --frozen pytest tests -q -W error::RuntimeWarning`. Local stdio/socket/thread
+wakeup fixtures need ordinary local process/network permissions. They make no provider
+requests. Use scripts/check_installs.py with a freshly exported lock and built wheel
+for packaging checks; qualification.md contains the exact sequence.
 
-Read [qualification](qualification.md), [finding report](finding-report.md), and
-[hardening brief](hardening-brief.md). T-007–T-009 follow in dependency order.
-No publishing, remote/history changes or sibling-project modifications.
+Future release qualification should expand typing (81 known mypy errors), Python/platform
+coverage and explicitly authorized live-provider tests. Those are measured limits, not
+unfinished hardening implementations. Preserve the MCP 1.30.0 / 2025-11-25 qualification
+boundary until new SDK/protocol fixtures pass. Do not publish, modify remotes/history,
+read credentials or modify sibling projects without a new user instruction.
