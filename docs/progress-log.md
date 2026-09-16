@@ -71,3 +71,32 @@ Remaining findings are individually reported with prerequisites in finding-repor
 no live provider, full packaging, wire memory bound or whole-program completion claim.
 
 Final validation after reconnect guard: `.venv/bin/python -m pytest tests -q -W error::RuntimeWarning` → **176 passed, 2 expected history warnings**. Extracted the short-deadline test factory into `tests/mcp_fakes.py`; its lifecycle suite passed 7 tests afterward. New/modified MCP source modules remain below 200 lines.
+
+## S-004 — 2026-09-15 — follow-up reproductions and implementation
+
+Agent: Codex. Continued from reviewed baseline 6a8b987 (176 passing tests). Read the
+production/handoff skills, repository instructions and both accepted briefs. Preserved
+existing work. Copied the follow-up request to docs/followup-brief.md. Six regression
+cases failed before fixes: old dispatch invalidating a replacement, overlapping hub
+prefixes, failed observer publication, observer-blocked cleanup, and sync/async policy
+checking raw arguments rather than defaulted effects.
+
+Implemented dispatch ownership, transactional exact registrations, canonical aliases,
+immutable validated invocations and scoped subscriptions, then expanded provider/history,
+scheduling/outcome, logging and packaging contracts. Intermediate in-process suite reached
+190 passing tests. No provider credentials, live services, remotes or sibling projects
+were touched. Continued qualification is recorded below; this entry does not substitute
+plans for completion evidence.
+
+## S-005 — 2026-09-16 — bounded retry policy (T-008)
+
+Agent: Codex. Added transient transport/status/SDK classification, retry-after minimums,
+bounded exponential jitter and total deadlines. Kept first-yield and autorun effect
+barriers, general decorator caller responsibility and original exception context.
+Cancellation never proves an effect absent. Sync deadlines bound retry scheduling,
+not already-running functions. Runtime rationale: docs/retry-policy.md.
+
+`.venv/bin/pytest tests/test_retry_contract.py tests/test_retry_boundaries.py tests/test_run.py -q -W error::RuntimeWarning`
+passed **41 tests**. Configuration/replay regressions remain intact. Git author/committer
+verified as PhoeniX5971 <moh845195@gmail.com>. Next: commit the integrated runtime
+contracts and then their locked distribution qualification/handoff.
