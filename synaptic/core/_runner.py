@@ -1,13 +1,10 @@
-import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Optional
 
 from .base import ResponseMem, UserMem
-from ._awaitables import require_sync
 from ._completion import Completion
-from .tool import Tool, ToolCall
-from .invocation import LocalExecutor
+from ._execution_state import ExecutionState, check_cancelled
 from .base.content import media_content
 from .capabilities import Capabilities, UnsupportedCapability
 from ..logging import _bus
@@ -21,6 +18,14 @@ def _ctx(model) -> list:
 
 
 def _check(model, mode, images, audio):
+    for memory in model.history.entries:
+        if getattr(memory, "extensions", {}).get("incomplete") or (
+            getattr(memory, "tool_calls", None)
+            and len(memory.tool_results) != len(memory.tool_calls)
+        ):
+            raise ValueError(
+                "Reconcile incomplete execution and supply every tool result before continuing"
+            )
     capabilities = getattr(model.llm, "capabilities", None)
     if isinstance(capabilities, Capabilities):
         capabilities.check(
@@ -40,10 +45,6 @@ def _check(model, mode, images, audio):
                     )
                 ):
                     raise UnsupportedCapability("History contains unsupported media")
-            if getattr(memory, "tool_calls", None) and len(memory.tool_results) != len(
-                memory.tool_calls
-            ):
-                raise ValueError("Supply every tool result before continuing this history")
 
 
 def invoke(
@@ -54,8 +55,10 @@ def invoke(
     audio=None,
     autorun: bool | None = None,
     automem: bool | None = None,
+    abort=None,
     **kwargs,
 ) -> ResponseMem:
+    check_cancelled(abort)
     _check(model, "invoke", images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
@@ -84,29 +87,18 @@ def invoke(
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
-    if _autorun and memory.tool_calls:
-        if any(t.is_async for t in model.llm.synaptic_tools):
-            raise RuntimeError("invoke() cannot run async tools; use ainvoke()")
-        memory.tool_results = run_tools_sync(
-            tools,
-            model.blacklist,
-            memory.tool_calls,
-            getattr(model, "executor", None),
-        )
-    else:
-        memory.tool_results = []
-
-    if _automem and model.history is not None:
-        if prompt is not None or images or audio:
-            model.history.add(
-                UserMem(
-                    message=prompt or "",
-                    role=role,
-                    created=created,
-                    content=media_content(images, audio),
-                )
+    remember(model, memory, _automem, prompt, role, created, images, audio)
+    with ExecutionState(memory, abort):
+        check_cancelled(abort)
+        if _autorun and memory.tool_calls:
+            run_tools_sync(
+                tools,
+                model.blacklist,
+                memory.tool_calls,
+                getattr(model, "executor", None),
+                memory,
+                abort,
             )
-        model.history.add(memory)
 
     return memory
 
@@ -119,8 +111,10 @@ async def ainvoke(
     audio=None,
     autorun: bool | None = None,
     automem: bool | None = None,
+    abort=None,
     **kwargs,
 ) -> ResponseMem:
+    check_cancelled(abort)
     _check(model, "ainvoke", images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
@@ -132,11 +126,20 @@ async def ainvoke(
 
     t0 = time.monotonic()
     completion = Completion()
-    async for chunk in model.llm.astream(
-        prompt=prompt, role=role, images=images, audio=audio, **kwargs
-    ):
-        completion.add(chunk)
-
+    source = model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
+    try:
+        async for chunk in source:
+            completion.add(chunk)
+            check_cancelled(abort)
+    except BaseException as error:
+        memory = completion.memory(created)
+        remember(model, memory, _automem, prompt, role, created, images, audio)
+        ExecutionState(memory, abort).interrupt(error)
+        raise
+    finally:
+        close = getattr(source, "aclose", None)
+        if close:
+            await close()
     memory = completion.memory(created)
 
     if _bus.active():
@@ -155,17 +158,25 @@ async def ainvoke(
             }
         )
 
-    if _autorun and memory.tool_calls:
-        memory.tool_results = await run_tools_async(
-            tools,
-            model.blacklist,
-            memory.tool_calls,
-            getattr(model, "executor", None),
-        )
-    else:
-        memory.tool_results = []
+    remember(model, memory, _automem, prompt, role, created, images, audio)
+    with ExecutionState(memory, abort):
+        check_cancelled(abort)
+        if _autorun and memory.tool_calls:
+            await run_tools_async(
+                tools,
+                model.blacklist,
+                memory.tool_calls,
+                getattr(model, "executor", None),
+                memory,
+                abort,
+            )
 
-    if _automem and model.history is not None:
+    return memory
+
+
+def remember(model, memory, automem, prompt, role, created, images, audio):
+    model.last_response = memory
+    if automem and model.history is not None:
         if prompt is not None or images or audio:
             model.history.add(
                 UserMem(
@@ -176,8 +187,6 @@ async def ainvoke(
                 )
             )
         model.history.add(memory)
-
-    return memory
 
 
 from ._model_stream import astream

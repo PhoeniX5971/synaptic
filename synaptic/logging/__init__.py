@@ -23,7 +23,8 @@ def disable_logging() -> None:
     """Stop logging and close the log file."""
     global _writer, _subscription
     if _writer is not None:
-        _subscription.close()
+        if _subscription is not None:
+            _subscription.close()
         _subscription = None
         _writer.close()
         _writer = None

@@ -3,12 +3,11 @@
 import asyncio
 import time
 from datetime import datetime, timezone
-from typing import Any, List, Optional
-from .base import UserMem
+from typing import Optional
 from ._completion import Completion
-from .base.content import media_content
 from ..logging import _bus
-from ._runner import _check, _ctx, run_tools_async
+from ._runner import _check, _ctx, run_tools_async, remember
+from ._execution_state import ExecutionState, check_cancelled
 
 
 async def astream(
@@ -22,8 +21,7 @@ async def astream(
     abort=None,
     **kwargs,
 ):
-    if abort and abort.is_set():
-        raise asyncio.CancelledError()
+    check_cancelled(abort)
     _check(model, "astream", images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
@@ -50,7 +48,6 @@ async def astream(
     created = datetime.now().astimezone(timezone.utc)
     t0 = time.monotonic()
     completion = Completion()
-    tool_results: List[Any] = []
 
     source = model.llm.astream(
         prompt=prompt, role=role, images=images, audio=audio, abort=abort, **kwargs
@@ -64,20 +61,10 @@ async def astream(
                 if _bus.stream_chunks and _bus.active():
                     _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
             yield chunk
-    except BaseException:
-        if _automem:
-            if prompt is not None or images or audio:
-                model.history.add(
-                    UserMem(
-                        message=prompt or "",
-                        role=role,
-                        created=created,
-                        content=media_content(images, audio),
-                    )
-                )
-            partial = completion.memory(created)
-            partial.extensions["incomplete"] = True
-            model.history.add(partial)
+    except BaseException as error:
+        partial = completion.memory(created)
+        remember(model, partial, _automem, prompt, role, created, images, audio)
+        ExecutionState(partial, abort).interrupt(error)
         raise
     finally:
         close = getattr(source, "aclose", None)
@@ -97,23 +84,16 @@ async def astream(
             }
         )
 
-    if _autorun and completion.tool_calls:
-        tool_results = await run_tools_async(
-            tools,
-            model.blacklist,
-            completion.tool_calls,
-            getattr(model, "executor", None),
-        )
-    final_mem = completion.memory(created, tool_results)
-
-    if _automem and model.history is not None:
-        if prompt is not None or images or audio:
-            model.history.add(
-                UserMem(
-                    message=prompt or "",
-                    role=role,
-                    created=created,
-                    content=media_content(images, audio),
-                )
+    final_mem = completion.memory(created)
+    remember(model, final_mem, _automem, prompt, role, created, images, audio)
+    with ExecutionState(final_mem, abort):
+        check_cancelled(abort)
+        if _autorun and final_mem.tool_calls:
+            await run_tools_async(
+                tools,
+                model.blacklist,
+                final_mem.tool_calls,
+                getattr(model, "executor", None),
+                final_mem,
+                abort,
             )
-        model.history.add(final_mem)

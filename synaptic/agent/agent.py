@@ -2,7 +2,7 @@ from ._stream import AgentStream
 from datetime import datetime, timezone
 from typing import Callable, List, Optional
 
-from ..core.base import ResponseMem, UserMem, complete_tool_call
+from ..core.base import ResponseMem, UserMem
 from ..core.model import Model
 from ..core.base.content import media_content
 from ..core.tool import Tool, ToolRegistry
@@ -14,6 +14,7 @@ from ..core.invocation import LocalExecutor
 from .events import EventBus
 from .session import Session, BudgetExceeded
 from ..core._ownership import guarded
+from ..core._execution_state import check_cancelled
 import sys
 import asyncio
 
@@ -42,7 +43,9 @@ class Agent(AgentStream, _execution.AgentExecution):
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
         if max_turns < 1 or max_protocol_retries < 0:
-            raise ValueError("Positive turn budget and nonnegative protocol retry budget required")
+            raise ValueError(
+                "Positive turn budget and nonnegative protocol retry budget required"
+            )
         self.model = model
         self.session = session or Session()
         self.max_turns = max_turns
@@ -76,6 +79,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         self._dsl_parser.register(name, handler)
 
     def _prepare_turn(self):
+        self.model.last_response = None
         self._turn_tools = self._registry.all()
         if not self._text_mode:
             if hasattr(self.model, "unbind_tools"):
@@ -102,7 +106,14 @@ class Agent(AgentStream, _execution.AgentExecution):
             else "completed"
         )
         self.session.outcome = outcome
-        self.session.state = "done" if outcome == "completed" else outcome
+        if outcome == "completed":
+            self.session.state = "done"
+        elif isinstance(error, (asyncio.CancelledError, GeneratorExit)):
+            self.session.state = "cancelled"
+        elif isinstance(error, BudgetExceeded):
+            self.session.state = "exhausted"
+        else:
+            self.session.state = "failed"
         _bus.emit({"type": "agent.end", "session_id": self.session.id})
 
     def _add_user(self, prompt: Optional[str], role: str, images=None, audio=None) -> None:
@@ -118,47 +129,55 @@ class Agent(AgentStream, _execution.AgentExecution):
             )
 
     @guarded
-    def run(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
+    def run(
+        self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
+    ) -> ResponseMem:
         self._start()
         try:
             next_prompt = None
             self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
             for _ in range(self.max_turns):
+                check_cancelled(abort)
                 self._prepare_turn()
                 mem = self.model.invoke(
-                    next_prompt, role=role, autorun=False, automem=False, **kwargs
+                    next_prompt, role=role, autorun=False, automem=False, abort=abort, **kwargs
                 )
                 self.session.history.add(mem)
-                self.events.emit("step_end", mem)
+                self._tool_results(mem.tool_calls, mem, abort)
                 if not mem.tool_calls:
                     return mem
-                complete_tool_call(mem, self._tool_results(mem.tool_calls), self.session.history)
                 next_prompt = None
                 role = "user"
             raise BudgetExceeded("Agent reached max_turns")
+        except BaseException:
+            self._retain_generation_error()
+            raise
         finally:
             self._finish()
 
     @guarded
-    async def arun(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
+    async def arun(
+        self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
+    ) -> ResponseMem:
         self._start()
         try:
             next_prompt = None
             self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
             for _ in range(self.max_turns):
+                check_cancelled(abort)
                 self._prepare_turn()
                 mem = await self.model.ainvoke(
-                    next_prompt, role=role, autorun=False, automem=False, **kwargs
+                    next_prompt, role=role, autorun=False, automem=False, abort=abort, **kwargs
                 )
                 self.session.history.add(mem)
-                await self.events.aemit("step_end", mem)
+                await self._atool_results(mem.tool_calls, mem, abort)
                 if not mem.tool_calls:
                     return mem
-                complete_tool_call(
-                    mem, await self._atool_results(mem.tool_calls), self.session.history
-                )
                 next_prompt = None
                 role = "user"
             raise BudgetExceeded("Agent reached max_turns")
+        except BaseException:
+            self._retain_generation_error()
+            raise
         finally:
             self._finish()

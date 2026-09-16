@@ -10,7 +10,7 @@ class QueuedSink:
         if capacity < 1:
             raise ValueError("capacity must be positive")
         self.sink, self.on_error = sink, on_error
-        self.queue = queue.Queue(maxsize=capacity)
+        self.queue: queue.Queue[dict] = queue.Queue(maxsize=capacity)
         self.failures = self.dropped = 0
         self.closed = False
         self._stop = threading.Event()

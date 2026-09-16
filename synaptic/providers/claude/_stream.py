@@ -10,7 +10,16 @@ from .helpers import safe_json
 _STRUCTURED_OUTPUT_TOOL = "__structured_output__"
 
 
-class ClaudeStream:
+from anthropic import AsyncAnthropic
+from ...core.base import BaseModel
+
+
+class ClaudeStream(BaseModel):
+    async_client: AsyncAnthropic
+
+    def _build_request(self, prompt, role, images=None, **kwargs):
+        raise NotImplementedError
+
     async def astream(
         self,
         prompt: Optional[str],
@@ -40,13 +49,14 @@ class ClaudeStream:
                 event_type = getattr(event, "type", None)
 
                 if event_type == "message_start":
-                    response_id = getattr(event.message, "id", None)
+                    response_id = getattr(getattr(event, "message", None), "id", None)
                     u = getattr(getattr(event, "message", None), "usage", None)
                     if u:
                         input_tokens = getattr(u, "input_tokens", None)
                 elif event_type == "message_delta":
                     finish_reason = (
-                        getattr(getattr(event, "delta", None), "stop_reason", None) or finish_reason
+                        getattr(getattr(event, "delta", None), "stop_reason", None)
+                        or finish_reason
                     )
                     u = getattr(event, "usage", None)
                     if u:
@@ -83,7 +93,9 @@ class ClaudeStream:
                         if is_structured_output_block:
                             json_str = json.dumps(args)
                             accumulated_message = json_str
-                            yield ResponseChunk(text=json_str, is_final=False, function_call=None)
+                            yield ResponseChunk(
+                                text=json_str, is_final=False, function_call=None
+                            )
                         else:
                             tfc = ToolCall(name=active_tool_name, args=args, id=active_tool_id)
                             tool_calls.append(tfc)

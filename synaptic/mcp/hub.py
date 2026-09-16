@@ -25,10 +25,11 @@ class MCPHub:
         if isinstance(max_servers, bool) or not isinstance(max_servers, int) or max_servers < 1:
             raise ValueError("max_servers must be a positive integer")
         self.registry = registry or ToolRegistry()
-        self.sessions, self.loaded = {}, {}
+        self.sessions: dict[str, MCPSession] = {}
+        self.loaded: dict[str, list[str]] = {}
         self._id = uuid4().hex
         self._locks = {}
-        self._versions = {}
+        self._versions: dict[str, int] = {}
         for server in servers:
             if server.name in self.sessions or len(self.sessions) >= max_servers:
                 raise ValueError("Duplicate server or maximum server count exceeded")
@@ -70,7 +71,7 @@ class MCPHub:
                 self.registry.replace_owned((self._id, name), replacements, publish=publish)
                 return list(names)
 
-    async def load_all(self) -> Dict[str, List[str]]:
+    async def load_all(self) -> Dict[str, List[str] | Exception]:
         """Bounded workers; per-server exceptions are returned alongside successful catalogs."""
         return await self.runtime.map_load(list(self.sessions), self.load_server)
 

@@ -1,6 +1,11 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .history import History
+    from ..tool import Tool
+    from ..capabilities import Capabilities
 import enum
 
 from .memory import ResponseMem
@@ -44,6 +49,19 @@ from ...providers._lifecycle import AdapterLifecycle
 
 
 class BaseModel(AdapterLifecycle, ABC):
+    history: "History | None"
+    bound_tools: list["Tool"]
+    synaptic_tools: list["Tool"]
+    instructions: str
+    temperature: float
+    max_tokens: int
+    response_format: ResponseFormat
+    response_schema: Any
+    capabilities: "Capabilities"
+
+    def _invalidate_tools(self):
+        raise NotImplementedError
+
     @abstractmethod
     def invoke(self, prompt: Optional[str], **kwargs) -> ResponseMem:
         pass

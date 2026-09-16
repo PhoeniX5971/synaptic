@@ -127,3 +127,58 @@ are preserved where exposed; unknown usage is None and measured zero remains zer
 Native SDK exceptions retain their types/context. Retry classifies transport/timeouts,
 HTTP 408/429/5xx and recognized SDK transient errors, without classifying authentication,
 argument validation or programming errors as transient.
+
+## Incremental execution and cancellation (Control readiness follow-up)
+
+Every Model autorun and Agent batch publishes receipts to `ResponseMem.tool_results`
+**by call ID after each successful call, before observers or the next call**. If a
+later dispatch, output validation, observer, or cancellation fails, previous receipts
+remain available. Model also exposes the response as `last_response`, including when
+`automem=False`; an Agent always retains its partial response in Session history.
+Model autorun now raises execution failures and stops the batch instead of returning
+an error and proceeding to further effects. Unknown/blacklisted Model tools and policy
+denials still produce correlated error records without starting an effect.
+
+`response.tool_outcomes` returns a detached snapshot of
+`extensions.execution = {"version": 1, "calls": {call_id: outcome}}`. Each outcome
+contains the name and status:
+
+| Status | Evidence |
+| --- | --- |
+| `not_started` | Synaptic has not admitted this call's effect |
+| `started` | Execution has been admitted; completion is not yet known |
+| `succeeded` | A validated result was received and saved |
+| `denied` | A correlated rejection was saved without executing the tool |
+| `uncertain` | Execution had started when control was lost; effects may have happened |
+| `reconciled` | The consumer supplied an authoritative result |
+
+History format remains version 1; extensions preserve partial outcomes and receipts
+through JSON serialization. Results must be JSON-compatible. A snapshot of `started`
+work is not evidence of completion. Interrupted batches retain `extensions.incomplete`
+and the exception class in `extensions.execution_error`. Provider continuation rejects
+incomplete responses, even when every call has a receipt but a final observer failed.
+`model.supply_results`/`complete_tool_call` explicitly acknowledge the entire exchange;
+include existing receipts unchanged and resolve every remaining ID. Conflicting
+replacement of a known receipt is rejected, including positional-list replacement.
+Execution helpers reject previously recorded/admitted calls; no recovery path replays
+completed or uncertain effects. Reconciliation is an application decision, not a retry.
+
+`abort` is accepted by Model invoke/ainvoke/astream and Agent run/arun/astream.
+Synaptic checks it before generation, after generation, after awaited permission and
+observation, between calls, and at the local worker's effect boundary after scheduler
+admission. Task cancellation propagates. A token cannot preempt a blocking function;
+the next boundary observes it and preserves any receipt already received. A worker
+that has already started may outlive its cancelled awaiter and stays `uncertain` until
+consumer reconciliation; late completion is not invented as a confirmed receipt.
+
+External executors are conservatively admitted when handed an Invocation. They own
+remote effects, idempotency, output validation and cancellation after that handoff.
+A cooperative executor may declare `manages_admission=True`, call
+`invocation.check_cancelled()` after its queue/permission waits, then call
+`invocation.begin_effect()` immediately before remote submission (or
+`invocation.execute()` for the captured local callable, which gates and begins itself).
+Do not call both begin_effect and execute for the same effect. The gate rejects a
+second begin. This permits truthful `not_started` reporting for cooperative queues;
+opaque executor cancellation remains `uncertain`. Synaptic cannot stop external code
+that ignores the gate or prove that a remote request was not accepted. No durable
+exactly-once or process-crash recovery guarantee is made by this in-memory journal.

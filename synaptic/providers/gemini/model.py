@@ -56,7 +56,7 @@ class GeminiAdapter(GeminiStream, BaseModel):
         self.gemini_tools = []
         all_tools = collect_tools(self.bound_tools, self.tool_registry)
         for t in all_tools.values():
-            self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))  # type: ignore
+            self.gemini_tools.append(types.Tool(function_declarations=[t.declaration]))
         self.synaptic_tools = list(all_tools.values())
 
     def to_contents(self) -> list[types.Content]:
@@ -73,7 +73,7 @@ class GeminiAdapter(GeminiStream, BaseModel):
         config = types.GenerateContentConfig(
             temperature=kwargs.pop("temperature", self.temperature),
             max_output_tokens=kwargs.pop("max_tokens", self.max_tokens),
-            tools=self.gemini_tools,
+            tools=list(self.gemini_tools),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             system_instruction=self.instructions or None,
         )
@@ -103,8 +103,9 @@ class GeminiAdapter(GeminiStream, BaseModel):
         if prompt_parts:
             contents.append(types.Content(role=role, parts=prompt_parts))
 
+        sdk_contents: list[types.ContentUnionDict] = list(contents)
         response = self.client.models.generate_content(
-            model=self.model, contents=contents, config=config, **kwargs
+            model=self.model, contents=sdk_contents, config=config, **kwargs
         )
 
         created = datetime.now().astimezone(timezone.utc)
@@ -119,12 +120,11 @@ class GeminiAdapter(GeminiStream, BaseModel):
                     if part.text:
                         message += part.text
                     if part.function_call:
+                        call = part.function_call
+                        if not call.name:
+                            raise ValueError("Gemini function call is missing its name")
                         tool_calls.append(
-                            ToolCall(
-                                name=part.function_call.name,  # type: ignore
-                                args=part.function_call.args or {},
-                                id=getattr(part.function_call, "id", None),
-                            )
+                            ToolCall(name=call.name, args=call.args or {}, id=call.id)
                         )
 
         um = getattr(response, "usage_metadata", None)

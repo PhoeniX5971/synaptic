@@ -35,11 +35,11 @@ def serialize(history):
 
 
 def deserialize(data):
-    from .memory import History, ResponseMem, UserMem
+    from .memory import History, Memory, ResponseMem, UserMem
 
     if data.get("version") != 1:
         raise ValueError("Unsupported history serialization version")
-    entries = []
+    entries: list[Memory] = []
     for raw in data["entries"]:
         entry = copy.deepcopy(raw)
         entry["content"] = tuple(ContentBlock(**block) for block in entry.get("content", []))
@@ -56,14 +56,18 @@ def deserialize(data):
 def correlate(memory, results):
     if isinstance(results, dict):
         indexed = results
-    elif results and all(isinstance(result, dict) and "call_id" in result for result in results):
+    elif results and all(
+        isinstance(result, dict) and "call_id" in result for result in results
+    ):
         indexed = {result["call_id"]: result for result in results}
         if len(indexed) != len(results):
             raise ValueError("Duplicate external result call_id")
     else:
         if len(results) != len(memory.tool_calls):
             raise ValueError("Every tool call requires exactly one result")
-        return copy.deepcopy(results)  # legacy ordered result lists remain explicit compatibility
+        return copy.deepcopy(
+            results
+        )  # legacy ordered result lists remain explicit compatibility
     ids = [call.id for call in memory.tool_calls]
     if set(indexed) != set(ids) or len(ids) != len(set(ids)):
         raise ValueError("External results must match the complete set of call IDs")

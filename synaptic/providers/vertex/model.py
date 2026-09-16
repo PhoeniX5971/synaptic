@@ -67,7 +67,6 @@ class VertexAdapter(BaseModel):
         self._convert_tools()
 
     def _convert_tools(self):
-        """Convert TOOL_REGISTRY + explicit tools → Vertex Tool definitions."""
         all_tools = collect_tools(self.bound_tools, self.tool_registry)
         all_declarations: List[FunctionDeclaration] = []
 
@@ -76,9 +75,9 @@ class VertexAdapter(BaseModel):
 
             if isinstance(decl, dict):
                 decl = FunctionDeclaration(
-                    name=decl.get("name"),  # type: ignore
-                    description=decl.get("description"),  # type: ignore
-                    parameters=decl.get("parameters"),  # type: ignore
+                    name=decl.get("name"),
+                    description=decl.get("description"),
+                    parameters=decl.get("parameters"),
                 )
 
             all_declarations.append(decl)
@@ -181,7 +180,9 @@ class VertexAdapter(BaseModel):
                     for part in cand.content.parts:
                         if part.text:
                             accumulated_message += part.text
-                            yield ResponseChunk(text=part.text, is_final=False, function_call=None)
+                            yield ResponseChunk(
+                                text=part.text, is_final=False, function_call=None
+                            )
         finally:
             close = getattr(source, "aclose", None) or getattr(source, "close", None)
             if close:

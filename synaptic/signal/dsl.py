@@ -6,8 +6,13 @@ from typing import Callable, Dict, List, Optional
 from ..core.base.base_model import ToolCallArgsDelta
 from ..core.tool import ToolCall
 from .events import (
-    BlockDelta, BlockDone, BlockStarted,
-    SignalEvent, TextDelta, ToolCallDone, ToolCallStarted,
+    BlockDelta,
+    BlockDone,
+    BlockStarted,
+    SignalEvent,
+    TextDelta,
+    ToolCallDone,
+    ToolCallStarted,
 )
 
 _DSL_FRAGMENT = """
@@ -47,7 +52,9 @@ def _tool_handler(evt: SignalEvent) -> List[SignalEvent]:
         try:
             args = json.loads(evt.content.strip())
         except (json.JSONDecodeError, ValueError):
-            warnings.warn(f"DSL: invalid JSON in <tool name=\"{evt.attrs.get('name', '')}\">: {evt.content!r}")
+            warnings.warn(
+                f'DSL: invalid JSON in <tool name="{evt.attrs.get("name", "")}">: {evt.content!r}'
+            )
             args = {}
         return [ToolCallDone(call=ToolCall(name=evt.attrs.get("name", ""), args=args))]
     return []
@@ -100,7 +107,7 @@ class DSLParser:
                 if idx == -1:
                     self._buf = self._buf[-1:] if self._buf else ""
                     break
-                self._buf = self._buf[idx + 1:]
+                self._buf = self._buf[idx + 1 :]
                 self._state = "tag_open"
 
             elif self._state == "tag_open":
@@ -108,14 +115,14 @@ class DSLParser:
                 if idx == -1:
                     break
                 tag_str = self._buf[:idx]
-                self._buf = self._buf[idx + 1:]
+                self._buf = self._buf[idx + 1 :]
                 parts = tag_str.split(None, 1)
                 self._block_name = parts[0]
                 self._attrs = dict(_ATTR_RE.findall(parts[1] if len(parts) > 1 else ""))
                 self._close = f"</{self._block_name}>"
                 self._snapshot = ""
                 self._state = "in_block"
-                evt = BlockStarted(type=self._block_name, attrs=self._attrs)
+                evt: SignalEvent = BlockStarted(type=self._block_name, attrs=self._attrs)
                 events.append(evt)
                 events.extend(self._handle(evt))
 
@@ -126,7 +133,12 @@ class DSLParser:
                     if safe:
                         emit = self._buf[:safe]
                         self._snapshot += emit
-                        evt = BlockDelta(type=self._block_name, delta=emit, snapshot=self._snapshot, attrs=self._attrs)
+                        evt = BlockDelta(
+                            type=self._block_name,
+                            delta=emit,
+                            snapshot=self._snapshot,
+                            attrs=self._attrs,
+                        )
                         events.append(evt)
                         events.extend(self._handle(evt))
                         self._buf = self._buf[safe:]
@@ -134,13 +146,20 @@ class DSLParser:
                 chunk = self._buf[:idx]
                 if chunk:
                     self._snapshot += chunk
-                    evt = BlockDelta(type=self._block_name, delta=chunk, snapshot=self._snapshot, attrs=self._attrs)
+                    evt = BlockDelta(
+                        type=self._block_name,
+                        delta=chunk,
+                        snapshot=self._snapshot,
+                        attrs=self._attrs,
+                    )
                     events.append(evt)
                     events.extend(self._handle(evt))
-                evt = BlockDone(type=self._block_name, content=self._snapshot, attrs=self._attrs)
+                evt = BlockDone(
+                    type=self._block_name, content=self._snapshot, attrs=self._attrs
+                )
                 events.append(evt)
                 events.extend(self._handle(evt))
-                self._buf = self._buf[idx + len(self._close):]
+                self._buf = self._buf[idx + len(self._close) :]
                 self._block_name = self._snapshot = self._close = ""
                 self._attrs = {}
                 self._state = "normal"

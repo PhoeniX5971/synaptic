@@ -97,3 +97,22 @@ excluded pending an explicit API/protocol migration.
 The earlier statement that hub refresh remained under review is historical and is
 superseded by these contracts. See [runtime contracts](contracts.md) for lifecycle
 semantics and [qualification](qualification.md) for exact measured limits.
+
+## Control readiness follow-up
+
+Model autorun now stops and raises on tool/executor/output-validation failure. Earlier
+receipts remain in history when automem is enabled, and in `model.last_response` otherwise.
+Agent preserves the same evidence for failures/cancellation, including strict observer
+errors. Tool result records now carry call IDs on all Model autorun paths.
+
+Use `response.tool_outcomes` to distinguish succeeded, denied, not_started, started,
+uncertain and reconciled calls. History v1 preserves these in extensions. An incomplete
+response blocks provider continuation even if all receipts exist; explicitly acknowledge
+with complete_tool_call/supply_results, retaining known receipts unchanged. Successful or
+uncertain calls cannot be replayed by execution helpers. This does not provide durable
+exactly-once execution across process failure.
+
+Pass `abort` on sync, async or streaming Model/Agent calls. Custom delayed executors can
+opt into `manages_admission=True` and use Invocation.check_cancelled/begin_effect after
+queue admission; existing opaque executors retain conservative uncertain-effect semantics.
+See contracts.md before implementing a custom executor.

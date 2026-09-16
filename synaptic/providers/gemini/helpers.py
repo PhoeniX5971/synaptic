@@ -58,7 +58,7 @@ def build_audio_parts(audio: Optional[List[str]]) -> List[types.Part]:
 
 
 def history_contents(history, role_map) -> list[types.Content]:
-    contents = []
+    contents: list[types.Content] = []
     if history is None:
         return contents
     for memory in history.effective_mems():
@@ -69,7 +69,9 @@ def history_contents(history, role_map) -> list[types.Content]:
             for call in memory.tool_calls:
                 parts.append(
                     types.Part(
-                        function_call=types.FunctionCall(name=call.name, args=call.args, id=call.id)
+                        function_call=types.FunctionCall(
+                            name=call.name, args=call.args, id=call.id
+                        )
                     )
                 )
             contents.append(types.Content(role="model", parts=parts))

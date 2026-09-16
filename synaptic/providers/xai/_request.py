@@ -18,7 +18,15 @@ from .helpers import history_messages, image_to_data_url
 _STRUCTURED_OUTPUT_TOOL = "__structured_output__"
 
 
-class XAIRequest:
+from xai_sdk.sync.client import Client
+from ...core.base import BaseModel
+
+
+class XAIRequest(BaseModel):
+    model: str
+    _sync_client: Client
+    xai_tools: list[chat_pb2.Tool]
+
     def _schema(self) -> Optional[Dict]:
         if self.response_schema is None:
             return None
@@ -55,7 +63,10 @@ class XAIRequest:
         return self._sync_client.files.upload(BytesIO(data), filename=filename).id
 
     def _build_user_message(
-        self, prompt: Optional[str], images: Optional[List[Any]], audio: Optional[List[Any]] = None
+        self,
+        prompt: Optional[str],
+        images: Optional[List[Any]],
+        audio: Optional[List[Any]] = None,
     ) -> chat_pb2.Message:
         parts = [text(prompt or "")]
         for img in images or []:

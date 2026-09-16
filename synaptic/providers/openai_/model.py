@@ -14,10 +14,10 @@ class OpenAIAdapter(BaseModel):
 
     @staticmethod
     def _clients(api_key, base_url):
-        kwargs = {"api_key": api_key or "none"}
-        if base_url:
-            kwargs["base_url"] = base_url
-        return OpenAI(**kwargs), AsyncOpenAI(**kwargs)
+        return (
+            OpenAI(api_key=api_key or "none", base_url=base_url),
+            AsyncOpenAI(api_key=api_key or "none", base_url=base_url),
+        )
 
     def __init__(
         self,

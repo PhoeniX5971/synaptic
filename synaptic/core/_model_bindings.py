@@ -4,7 +4,12 @@ from typing import List
 from .tool import Tool, collect_tools
 
 
+from .base import BaseModel
+
+
 class ModelBindings:
+    llm: BaseModel
+
     @property
     def tools(self) -> List[Tool]:
         """Current adapter tool snapshot, including registry changes."""

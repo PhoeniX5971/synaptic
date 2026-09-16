@@ -27,7 +27,7 @@ class DiscoveryLimits:
 
 
 async def discover(session, limits: DiscoveryLimits) -> list:
-    from jsonschema.validators import validator_for  # type: ignore[import-untyped]
+    from jsonschema.validators import validator_for
 
     tools: list[Any] = []
     cursors: set[str] = set()

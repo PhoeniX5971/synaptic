@@ -1,55 +1,72 @@
-"""One-shot model tool dispatch through the executor boundary."""
+"""One-shot dispatch, publishing every receipt before admitting another effect."""
 
-from typing import Any, List
-from .tool import Tool, ToolCall
+from .tool import ToolCall
 from .invocation import LocalExecutor
+from .base.memory import ResponseMem
+from ._execution_state import ExecutionState, admit
 
 
-def run_tools_sync(
-    tools: List[Tool], blacklist: List[str], tool_calls: List[ToolCall], executor=None
-) -> List[Any]:
-    results = []
-    tool_map = {t.name: t for t in tools}
-    for call in tool_calls:
-        if not isinstance(call, ToolCall):
-            results.append({"error": "Invalid tool call format"})
-            continue
-        name, args = call.name, call.args
-        tool = tool_map.get(name)
-        if tool and name not in blacklist:
-            if tool.is_async:
-                raise RuntimeError(f"Tool '{name}' is async, cannot run in sync invoke()")
+def _prepare(tools, blacklist, call, state):
+    state.check()
+    if not isinstance(call, ToolCall):
+        raise ValueError("Invalid tool call format")
+    tool = next((tool for tool in tools if tool.name == call.name), None)
+    if tool is None or call.name in blacklist:
+        return None
+    return state.bind(tool.prepare(call))
+
+
+def run_tools_sync(tools, blacklist, tool_calls, executor=None, memory=None, abort=None):
+    legacy = memory is None
+    mem = memory if memory is not None else ResponseMem("", None, tool_calls=tool_calls)
+    executor = executor or LocalExecutor()
+    with ExecutionState(mem, abort) as state:
+        state.check()
+        for call in tool_calls:
+            result = {"name": call.name, "call_id": call.id}
             try:
-                results.append(
-                    {
-                        "name": name,
-                        "result": (executor or LocalExecutor()).execute(tool.prepare(call)),
-                    }
-                )
-            except Exception as e:
-                results.append({"name": name, "error": str(e)})
-        else:
-            results.append({"name": name, "error": "Tool not registered or blacklisted"})
-    return results
+                invocation = _prepare(tools, blacklist, call, state)
+                if invocation is None:
+                    result["error"] = "Tool not registered or blacklisted"
+                else:
+                    admit(executor, invocation)
+                    result["result"] = executor.execute(invocation)
+            except Exception as error:
+                if not legacy:
+                    raise
+                result["error"] = str(error)
+            state.record(call, result)
+            state.check()
+    return (
+        [{k: v for k, v in item.items() if k != "call_id"} for item in mem.tool_results]
+        if legacy
+        else mem.tool_results
+    )
 
 
-async def run_tools_async(
-    tools: List[Tool], blacklist: List[str], tool_calls: List[ToolCall], executor=None
-) -> List[Any]:
-    results = []
-    tool_map = {t.name: t for t in tools}
-    for call in tool_calls:
-        if not isinstance(call, ToolCall):
-            results.append({"error": "Invalid tool call format"})
-            continue
-        name, args = call.name, call.args
-        tool = tool_map.get(name)
-        if tool and name not in blacklist:
+async def run_tools_async(tools, blacklist, tool_calls, executor=None, memory=None, abort=None):
+    legacy = memory is None
+    mem = memory if memory is not None else ResponseMem("", None, tool_calls=tool_calls)
+    executor = executor or LocalExecutor()
+    with ExecutionState(mem, abort) as state:
+        state.check()
+        for call in tool_calls:
+            result = {"name": call.name, "call_id": call.id}
             try:
-                res = await (executor or LocalExecutor()).aexecute(tool.prepare(call))
-                results.append({"name": name, "result": res})
-            except Exception as e:
-                results.append({"name": name, "error": str(e)})
-        else:
-            results.append({"name": name, "error": "Tool not registered or blacklisted"})
-    return results
+                invocation = _prepare(tools, blacklist, call, state)
+                if invocation is None:
+                    result["error"] = "Tool not registered or blacklisted"
+                else:
+                    admit(executor, invocation)
+                    result["result"] = await executor.aexecute(invocation)
+            except Exception as error:
+                if not legacy:
+                    raise
+                result["error"] = str(error)
+            state.record(call, result)
+            state.check()
+    return (
+        [{k: v for k, v in item.items() if k != "call_id"} for item in mem.tool_results]
+        if legacy
+        else mem.tool_results
+    )

@@ -46,6 +46,10 @@ class ResponseMem(Memory):
         self.extensions = dict(extensions or {})
         self.finish_reason = normalize_finish(finish_reason, self.extensions)
 
+    @property
+    def tool_outcomes(self) -> dict:
+        return copy.deepcopy(self.extensions.get("execution", {}).get("calls", {}))
+
     def list_tool_calls(self) -> List[str]:
         return [tc.name for tc in self.tool_calls]
 
@@ -56,9 +60,7 @@ class ResponseMem(Memory):
         return matches[0]
 
     def __repr__(self):
-        return (
-            f"<ResponseMem role={self.role} message={self.message!r} tool_calls={self.tool_calls}>"
-        )
+        return f"<ResponseMem role={self.role} message={self.message!r} tool_calls={self.tool_calls}>"
 
 
 class UserMem(Memory):
@@ -80,6 +82,24 @@ def complete_tool_call(
     history: Optional[History] = None,
 ) -> None:
     """Set tool results and optionally ensure the response is in history."""
-    mem.tool_results = _history_io.correlate(mem, results)
+    correlated = _history_io.correlate(mem, results)
+    known = {}
+    for index, item in enumerate(mem.tool_results):
+        call_id = item.get("call_id") if isinstance(item, dict) else None
+        if call_id is None and len(mem.tool_results) == len(mem.tool_calls):
+            call_id = mem.tool_calls[index].id
+        if call_id is not None:
+            known[call_id] = item
+    for call, item in zip(mem.tool_calls, correlated):
+        if call.id in known and known[call.id] != item:
+            raise ValueError("Cannot replace an already recorded tool result")
+    mem.tool_results = correlated
+    outcomes = mem.tool_outcomes
+    for call in mem.tool_calls:
+        if call.id in outcomes and outcomes[call.id]["status"] not in ("succeeded", "denied"):
+            outcomes[call.id]["status"] = "reconciled"
+    if outcomes:
+        mem.extensions["execution"] = {"version": 1, "calls": outcomes}
+    mem.extensions.pop("incomplete", None)
     if history is not None and mem not in history.entries:
         history.add(mem)

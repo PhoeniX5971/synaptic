@@ -120,7 +120,9 @@ class Connection:
                 await self._run_http()
             attempt.error = self._error or RuntimeError("MCP transport owner terminated")
         except asyncio.CancelledError:
-            attempt.error = attempt.error or self._error or RuntimeError("MCP connection cancelled")
+            attempt.error = (
+                attempt.error or self._error or RuntimeError("MCP connection cancelled")
+            )
         except Exception as exc:
             attempt.error = exc
         finally:
@@ -156,7 +158,7 @@ class Connection:
             async with ClientSession(read, write) as session:
                 async with asyncio.timeout(self.connect_timeout):
                     initialized = await session.initialize()
-                self.protocol_version = initialized.protocolVersion
+                self.protocol_version = str(initialized.protocolVersion)
                 self.session = session
                 self.state = ConnectionState.CONNECTED
                 assert self._ready is not None

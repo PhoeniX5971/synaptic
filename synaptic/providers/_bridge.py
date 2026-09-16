@@ -7,7 +7,7 @@ import threading
 
 async def stream(factory, scheduler, capacity=16):
     loop = asyncio.get_running_loop()
-    queue = asyncio.Queue(maxsize=capacity)
+    queue: asyncio.Queue[object] = asyncio.Queue(maxsize=capacity)
     stop = threading.Event()
     sentinel = object()
 
@@ -43,7 +43,9 @@ async def stream(factory, scheduler, capacity=16):
         while True:
             receive = asyncio.create_task(queue.get())
             try:
-                done, _ = await asyncio.wait((receive, task), return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait(
+                    (receive, task), return_when=asyncio.FIRST_COMPLETED
+                )
                 if task in done:
                     await task
                     if receive not in done and queue.empty():

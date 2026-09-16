@@ -9,12 +9,14 @@ from datetime import datetime, timezone
 from ._privacy import prepare
 
 stream_chunks = False
-_current = ContextVar("synaptic_diagnostics", default=None)
-_correlation = ContextVar("synaptic_correlation", default={})
+_current: ContextVar["DiagnosticBus | None"] = ContextVar("synaptic_diagnostics", default=None)
+_correlation: ContextVar[dict[str, object]] = ContextVar("synaptic_correlation", default={})
 
 
 class DiagnosticBus:
-    def __init__(self, *, payloads=False, secrets=(), redact=None, max_bytes=16384, on_error=None):
+    def __init__(
+        self, *, payloads=False, secrets=(), redact=None, max_bytes=16384, on_error=None
+    ):
         if max_bytes < 256:
             raise ValueError("max_bytes must be at least 256")
         self.payloads, self.secrets, self.redact = payloads, tuple(secrets), redact
@@ -36,9 +38,15 @@ class DiagnosticBus:
     def emit(self, event):
         if not self._subscribers:
             return
-        candidate = {**_correlation.get(), **event, "ts": datetime.now(timezone.utc).isoformat()}
+        candidate = {
+            **_correlation.get(),
+            **event,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
         try:
-            candidate = prepare(candidate, self.payloads, self.secrets, self.redact, self.max_bytes)
+            candidate = prepare(
+                candidate, self.payloads, self.secrets, self.redact, self.max_bytes
+            )
         except Exception as exc:
             self._failure(exc)
             return

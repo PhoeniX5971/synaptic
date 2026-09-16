@@ -24,7 +24,14 @@ xai = ["xai-sdk>=1.8,<2"]
 all = ["synaptic[mcp,openai,deepseek,claude,gemini,vertex,together,xai]"]
 
 [dependency-groups]
-dev = ["pytest==9.0.2", "ruff==0.15.6", "mypy==1.19.1", "uvicorn==0.52.4", "starlette==1.6.0"]
+dev = [
+    "pytest==9.0.2",
+    "ruff==0.15.6",
+    "mypy==1.19.1",
+    "uvicorn==0.52.4",
+    "starlette==1.6.0",
+    "types-jsonschema==4.26.0.20260518",
+]
 
 [tool.setuptools.packages.find]
 include = ["synaptic*"]
@@ -39,3 +46,14 @@ constraint-dependencies = [
   "together==2.2.0", "xai-sdk==1.8.1", "pydantic==2.12.5",
   "jsonschema==4.26.0", "httpx==0.28.1", "anyio==4.12.1",
 ]
+
+[tool.mypy]
+files = ["synaptic"]
+check_untyped_defs = true
+incremental = false
+warn_unused_ignores = true
+
+# These pinned SDKs ship no py.typed marker. Only their import boundary is untyped.
+[[tool.mypy.overrides]]
+module = ["vertexai", "vertexai.*", "xai_sdk", "xai_sdk.*"]
+ignore_missing_imports = true
