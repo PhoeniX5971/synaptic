@@ -1,7 +1,8 @@
 # Quickstart
 
 This guide builds a small Synaptic app with a model, a tool, memory, and an
-agent.
+agent. Install Python 3.11+ and `pip install -e ".[openai]"` first.
+See [runtime contracts](contracts.md) for cleanup, cancellation and policy.
 
 ## 1. Create A Model
 
@@ -53,7 +54,7 @@ print(res.tool_results)
 ```python
 from synaptic import Agent
 
-agent = Agent(model, max_turns=5)
+agent = Agent(model, tools=[add], max_turns=5)
 res = agent.run("Add 7 and 8, then explain the answer")
 print(res.message)
 ```
@@ -64,7 +65,8 @@ print(res.message)
 
 ```python
 async for chunk in model.astream("Write a short poem"):
-    print(chunk.text, end="")
+    if not chunk.is_final:
+        print(chunk.text, end="")
 ```
 
 Each chunk is a `ResponseChunk` with `text`, `is_final`, optional
@@ -83,7 +85,7 @@ model = Model(
     api_key="...",
     tool_registry=registry,
 )
-agent = Agent(model, session=session)
+agent = Agent(model, session=session, tool_registry=registry)
 ```
 
 Use one `Session` per conversation and one `ToolRegistry` when tool scope must
