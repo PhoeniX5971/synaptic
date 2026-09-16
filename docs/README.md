@@ -42,3 +42,5 @@ Measured evidence: [qualification](qualification.md). Scope/status by original f
 Current runtime APIs: [contracts](contracts.md), [provider matrix](provider-matrix.md),
 the [retry policy](retry-policy.md), and the accepted [follow-up brief](followup-brief.md). `next-steps.md` is the compact
 portable handoff; `progress-log.md` is append-only implementation evidence.
+
+Control readiness findings and their resolution: [readiness follow-up](readiness-followup.md).

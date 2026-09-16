@@ -95,3 +95,10 @@ For multi-turn tool use, prefer `Agent`.
 
 Adapters accept `prompt=None`. Agents use this after tool results so the next
 provider call continues from history without adding a fake user message.
+
+Autorun stops on execution failure; earlier call-ID receipts remain in the response.
+Inspect `model.last_response` after an exception, including with `automem=False`. With
+automem enabled the same partial response is retained in history. Pass `abort` to sync,
+async or streaming calls to recheck cancellation before each newly admitted effect.
+Incomplete responses require explicit reconciliation before provider continuation.
+See [runtime contracts](../contracts.md) for outcomes and custom executor admission.

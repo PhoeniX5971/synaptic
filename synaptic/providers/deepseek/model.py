@@ -8,5 +8,9 @@ class DeepSeekAdapter(OpenAIAdapter):
 
     @staticmethod
     def _clients(api_key, base_url):
-        kwargs = {"api_key": api_key or "none", "base_url": base_url or "https://api.deepseek.com"}
-        return OpenAI(**kwargs), AsyncOpenAI(**kwargs)
+        return (
+            OpenAI(api_key=api_key or "none", base_url=base_url or "https://api.deepseek.com"),
+            AsyncOpenAI(
+                api_key=api_key or "none", base_url=base_url or "https://api.deepseek.com"
+            ),
+        )

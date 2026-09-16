@@ -148,3 +148,39 @@ silent data loss. Rotation is a sink concern. Retry timing is isolated in `_retr
 Retry retains the first-yield/autorun barriers while classifying only eligible transient
 failures. Retry-after is a minimum; an excessive server delay disables retry rather than
 violating that minimum. Generic decorators retain explicit caller responsibility.
+
+## T-010 — incremental effects, dispatch cancellation and full typing
+
+`core/_execution_state.py` owns a response-scoped journal, separate from diagnostic
+observers. A call starts `not_started`; admission publishes `started`, successful return
+publishes the receipt and `succeeded`, and interruption converts only started calls to
+`uncertain`. Updating receipts before tool_end/signals prevents a failing observer from
+erasing successful effects. The extension is copied on publication, and `tool_outcomes`
+returns a detached copy. History's existing extension serialization keeps format v1
+compatible without inventing a second durable store. The journal is in memory; callers
+must persist snapshots and reconcile unknown effects themselves.
+
+Invocation's cancellation gate travels through Executor handoff. LocalExecutor begins
+inside Invocation.execute, so a scheduler wait cannot bypass the token check. A scope
+interrupted while queued revokes later admission; cancellation of an already-running
+thread never fabricates absence of effects or releases actual worker capacity early.
+Opaque executors are conservatively admitted at handoff. Cooperative executors explicitly
+own delayed admission through check_cancelled/begin_effect. This opt-in preserves existing
+executor signatures and avoids claiming control over uncooperative remote systems.
+
+Model saves `last_response` and optional history before autorun. Agent saves generated
+responses before step observers and writes into that same response during dispatch.
+Execution exceptions propagate, stop later effects and retain prior receipts. Proposal
+mode still performs no effects. Provider continuation checks incomplete state independent
+of adapter capability metadata. External reconciliation cannot overwrite existing receipts;
+previously admitted calls cannot be dispatched again. Keeping all batch results in a local
+list until return was rejected because exceptions/cancellation destroy that evidence.
+
+`agent/_state.py`, BaseModel members and provider mixin declarations expose actual shared
+state to mypy. ContextVar/container annotations and SDK argument widening fix owned
+inference errors without suppressing package analysis. Gemini's SDK uses invariant union
+lists; constructing explicitly widened lists satisfies that API without an unsafe cast.
+Optional function-call names are validated. Stale ignores were removed. The full gate
+checks untyped bodies with normal imports and no incremental cache. Only Vertex/xAI
+imports lack typing metadata; JSON Schema uses pinned stubs. This is a package-wide
+baseline gate, not a claim of strict annotation coverage or typed third-party internals.

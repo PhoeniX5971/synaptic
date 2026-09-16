@@ -1,7 +1,7 @@
 # Finding-by-finding completion report
 
 Scope: [original brief](hardening-brief.md) and [follow-up](followup-brief.md).
-Baseline 6a8b987 passed 176 tests. Final locked-environment suite: **238 passed**,
+Baseline 6a8b987 passed 176 tests. The S-007 locked-environment suite: **238 passed**,
 including real local MCP stdio/HTTP transports. No original finding is deferred.
 Qualification boundaries below are limits of measured evidence, not planned substitutes
 for implementation. See [qualification](qualification.md) for commands and versions.
@@ -54,9 +54,13 @@ The six initial regression cases failed before the fixes (S-004).
 - MCP 1.30.0 / protocol 2025-11-25 is measured. Other versions/extensions are not inferred
   from dependency ranges. Catalog bounds apply after SDK decoding, not before wire buffering.
 - Python 3.13.8 Linux is runtime-qualified; >=3.11 declares the language floor, not a test
-  result for every interpreter/platform. Full-project typing is not clean (81 errors in
-  14 files); fatal Ruff and the ten focused type-check modules pass.
+  result for every interpreter/platform. T-010 supersedes the earlier typing limit: all
+  90 runtime-package files now pass the full-body gate; only Vertex/xAI SDK import typing
+  remains unqualified. The latest suite/install evidence is in qualification.md.
 - Thread cancellation cannot undo effects; sync retry deadlines cannot preempt blocking code.
   Resource references are preserved in history but unsupported for provider submission.
 - Diagnostics are best-effort. Persistence, desktop automation/grants, consumer plugin
   packaging and PC resource scheduling remain outside the framework as requested.
+
+The subsequent Control review is resolved in [readiness-followup.md](readiness-followup.md).
+The current full suite passes 302 tests; original F IDs and their evidence are preserved.

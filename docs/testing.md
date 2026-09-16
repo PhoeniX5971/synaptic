@@ -3,11 +3,11 @@
 Use the reproducible environment:
 
 ```sh
-uv sync --frozen --all-extras
-uv run --frozen pytest tests -q -W error::RuntimeWarning
+uv sync --frozen --all-extras --python 3.13.8
+uv run --frozen --all-extras python scripts/check_quality.py
 ```
 
-The suite passed 238 tests on Python 3.13.8 Linux. Tests use asyncio.run; no
+The gate passes all 90 runtime-package files in mypy and 302 tests on Python 3.13.8 Linux. Tests use asyncio.run; no
 pytest-asyncio plugin is required. Provider fixtures use installed SDK types or
 httpx.MockTransport, not live credentials. Manual demos under examples/live are never
 collected. Do not read .env or contact providers for deterministic checks.
@@ -27,3 +27,10 @@ See qualification.md for exact commands, dependency versions, final wheel instal
 warning explanations and static-check limits. `scripts/check_installs.py` creates only
 isolated temporary environments. Tests need all extras; a core installation is checked
 separately rather than expected to run provider fixture modules without their SDKs.
+
+The mypy configuration checks untyped function bodies with normal import following and
+no incremental cache. Only the pinned untyped Vertex/xAI SDK import namespaces are exempt
+from missing-import diagnostics; no Synaptic module is excluded. See qualification.md
+for exact limitations and the fresh-environment command. Windows and alternative Python
+versions require their own complete gate/transport/install qualification before support
+claims. Source fixtures do not establish live service or scale guarantees.

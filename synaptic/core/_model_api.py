@@ -3,7 +3,21 @@
 from .base.memory import complete_tool_call
 
 
+from .base import BaseModel, History, ResponseMem
+
+
 class ModelAPI:
+    llm: BaseModel
+
+    history: History
+    last_response: ResponseMem | None = None
+
+    def invoke(self, prompt=None, **kwargs) -> ResponseMem:
+        raise NotImplementedError
+
+    async def ainvoke(self, prompt=None, **kwargs) -> ResponseMem:
+        raise NotImplementedError
+
     def propose(self, prompt=None, **kwargs):
         """Generate correlated tool proposals without executing effects."""
         kwargs["autorun"] = False

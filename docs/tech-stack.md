@@ -16,3 +16,8 @@ LICENSE remains the existing GPLv3 text and is included in project metadata/dist
 No license grant was changed. Provider-specific behavior and qualification limits are in
 provider-matrix.md; the official MCP SDK 1.30.0 / protocol 2025-11-25 transport path is the
 only measured MCP combination. No version-range inference substitutes for qualification.
+
+The development typing gate is mypy 1.19.1 plus types-jsonschema 4.26.0.20260518,
+configured in pyproject.toml and driven by scripts/check_quality.py. All runtime-package
+files and untyped bodies are checked; only the Vertex/xAI SDK import metadata limitations
+are exempt. Windows and macOS have not been qualified; the install harness is POSIX.

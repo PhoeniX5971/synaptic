@@ -64,3 +64,19 @@ DiagnosticBus defaults to metadata, redacts before every sink, uses scoped corre
 and offers bounded queue/rotation with visible loss. Durable effect recording remains
 application-owned. Retry is bounded transient generation retry before output and without
 autorun effects; it is not a general automatic effect-recovery mechanism.
+
+## D-009 — 2026-09-16: persist receipts before fallible observation
+
+Resolve Control BUG-010/011 with per-call evidence in ResponseMem extensions. Commit each
+receipt before tool_end/signals or another dispatch. Stop the batch on execution failure,
+retain uncertain started work and reject automatic replay. Cancellation travels through
+Invocation admission; opaque external effects are uncertain after handoff, cooperative
+executors own their later admission gate. Explicit reconciliation cannot erase a receipt.
+
+## D-010 — 2026-09-16: full-package typing and bounded support claims
+
+Use the frozen all-extras environment, mypy 1.19.1, normal imports, untyped-body checking
+and disabled incremental cache for all package files. Fix project-owned errors instead of
+excluding modules or skipping owned imports. Pin types-jsonschema; narrowly permit the
+untyped Vertex/xAI SDK import namespaces. Windows, other Python/MCP/provider versions and
+live services require fresh executable qualification before expanding support claims.

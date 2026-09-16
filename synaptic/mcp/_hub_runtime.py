@@ -87,7 +87,7 @@ class HubRuntime:
 
     async def disconnect(self, name):
         self.draining.add(name)
-        errors = []
+        errors: list[Exception] = []
         try:
             try:
                 async with asyncio.timeout(self.timeout):
@@ -107,7 +107,7 @@ class HubRuntime:
             self.draining.discard(name)
 
     async def map_load(self, names, load):
-        queue = asyncio.Queue()
+        queue: asyncio.Queue[str] = asyncio.Queue()
         for name in names:
             queue.put_nowait(name)
         results = {}

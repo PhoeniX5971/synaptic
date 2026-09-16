@@ -9,7 +9,19 @@ from ...core.tool import ToolCall
 from .helpers import build_audio_parts, build_image_parts
 
 
-class GeminiStream:
+from google.genai import Client
+from ...core.base import BaseModel
+
+
+class GeminiStream(BaseModel):
+    model: str
+    role_map: dict[str, str]
+    gemini_tools: list[types.Tool]
+    client: Client
+
+    def to_contents(self) -> list[types.Content]:
+        raise NotImplementedError
+
     async def astream(
         self,
         prompt: Optional[str],
@@ -34,7 +46,7 @@ class GeminiStream:
         config = types.GenerateContentConfig(
             temperature=kwargs.pop("temperature", self.temperature),
             max_output_tokens=kwargs.pop("max_tokens", self.max_tokens),
-            tools=self.gemini_tools,
+            tools=list(self.gemini_tools),
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             system_instruction=self.instructions or None,
         )
@@ -51,11 +63,12 @@ class GeminiStream:
         usage_metadata = None
         finish_reason = None
 
-        source = await self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
+        sdk_contents: list[types.ContentUnionDict] = list(contents)
+        source = await self.client.aio.models.generate_content_stream(
             model=self.model,
-            contents=contents,
+            contents=sdk_contents,
             config=config,
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
         try:
             async for response in source:
@@ -81,7 +94,9 @@ class GeminiStream:
                         yield ResponseChunk(text=text, is_final=False, function_call=None)
                     fc = getattr(part, "function_call", None)
                     if fc:
-                        tfc = ToolCall(name=fc.name, args=fc.args or {}, id=getattr(fc, "id", None))  # type: ignore[union-attr]
+                        tfc = ToolCall(
+                            name=fc.name, args=fc.args or {}, id=getattr(fc, "id", None)
+                        )
                         tool_calls.append(tfc)
                         yield ResponseChunk(text="", is_final=False, function_call=tfc)
         finally:

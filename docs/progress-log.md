@@ -165,3 +165,57 @@ qualification is explicit release work, not an unfinished item from the accepted
 All accepted hardening findings are implemented. No publishing, remote/history rewriting,
 sibling-project changes or consumer desktop policy were performed. The user owns publishing.
 Author and committer identity verified before each local commit.
+
+## S-008 — 2026-09-16 — Control readiness review and recovery gate (T-010)
+
+Agent: Codex. Reviewed Control's `docs/synaptic-readiness-review.md` read-only against
+clean Synaptic `cac43ac2c5184926b4e1b89c924e76346e961969`. The accepted follow-up is mapped
+in readiness-followup.md; Control BUG-010/011 are review-local identifiers, not a
+renumbering of the original finding history. Production/handoff records remain canonical.
+
+Before implementation, five acceptance regressions failed: three Agent modes lost the
+first receipt when the second effect raised; Model and Agent streaming dispatched after
+cancellation at the final yield. A fresh full-body mypy run found 132 errors in 28 of
+88 files, broader than the historic 81-error gate. These failures were not deferred.
+
+ExecutionState now publishes each correlated receipt before observers or subsequent
+calls and serializes per-call evidence in history v1 extensions. Started interrupted
+calls remain uncertain; unstarted calls remain distinguishable. Model retains last_response
+with automem disabled and persists before autorun when enabled. Agent retains partial
+proposals even when generation is cancelled. Cancellation travels through Invocation,
+permission/observer boundaries and local scheduler admission; opaque external handoffs
+remain conservative, cooperative executors expose explicit admission. Reconciliation
+cannot replace known receipts, including legacy ordered/mapped results, or replay effects.
+
+Owned typing fixes add actual mixin state contracts, annotate inferred containers and
+ContextVars, narrow optional SDK fields and widen Gemini's SDK union lists. JSON Schema
+stubs are pinned; only Vertex/xAI SDK import namespaces lacking metadata are exempt.
+The gate checks every runtime module and untyped body with normal imports and a disabled
+incremental cache; no project files are excluded. Intermediate regression runs caught
+empty extension changes and a writable ModelAPI.history compatibility issue; both were
+corrected before qualification. A test invocation referenced a nonexistent filename and
+ran no tests; subsequent focused/full runs used actual test paths. No failed validation
+was counted as evidence of success.
+
+Final validation in a freshly created `/tmp/synaptic-readiness-env` from frozen uv.lock:
+
+- `python scripts/check_quality.py`: fatal Ruff passed; mypy **zero errors in 90 files**;
+  pytest **302 passed, four warnings** with RuntimeWarning treated as an error. The warnings
+  are two expected history truncations and two upstream Vertex/protobuf deprecations.
+- All original 238 tests remain, plus 64 recovery/cancellation/observer/reconciliation
+  regressions across applicable sync/async/stream/external paths. Real local MCP stdio,
+  Streamable HTTP and lifecycle fixtures remain included. No credentials/live providers.
+- `uv build --out-dir /tmp/synaptic-readiness-dist` built wheel and sdist. Exported frozen
+  constraints, then scripts/check_installs.py passed core, MCP, seven provider extras and
+  all extras, each outside the checkout with `python -I` and `uv pip check`. Repeated on
+  the rebuilt final wheel after the final legacy receipt guard and README update.
+- `git diff --check` and changed/new source <=200-line checks passed. The existing lock
+  resolution was retained apart from the added pinned typing stubs and marker ordering.
+
+Updated contracts, migration/API docs, architecture/rationale, qualification, findings,
+decisions D-009/010, known issues, roadmap, development plan and portable handoff. Support
+claims remain CPython 3.13.8 Linux x86_64 with the exact SDK versions in qualification.md.
+Windows/macOS, other interpreter/SDK versions, remote CI, live services and scale need new
+qualification. A running thread/opaque remote effect can outlive cancellation; this is not
+a durable exactly-once journal. These limits are explicit, with no accepted implementation
+item hidden as future work. Next: consumer integration qualification; only the user publishes.

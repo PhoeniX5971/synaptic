@@ -1,14 +1,15 @@
-# Qualification — completed hardening follow-up
+# Qualification — Control readiness follow-up (T-010)
 
-Measured 2026-09-16 against the implementation following baseline
-6a8b98701b0f3cba95ac2ea7e16d4a1d44fe7b0f. Historical first-tranche commands/results
-remain in progress-log.md (S-001–S-003). Final findings are mapped in finding-report.md.
+Measured 2026-09-16 after reviewing Control against Synaptic baseline
+`cac43ac2c5184926b4e1b89c924e76346e961969`. This record supersedes S-007's typing
+limitation. Earlier commands/results remain in progress-log.md; the original findings
+remain in finding-report.md and the new review is mapped in readiness-followup.md.
 
 ## Measured compatibility
 
 | Component | Version / result |
 | --- | --- |
-| Runtime | CPython 3.13.8, Linux; 238 tests passed in a fresh uv.lock environment |
+| Runtime | CPython 3.13.8, Linux x86_64; 302 tests passed in a fresh uv.lock environment |
 | MCP SDK / protocol | 1.30.0 / 2025-11-25; real subprocess stdio and loopback Streamable HTTP |
 | HTTP foundations | httpx 0.28.1, anyio 4.12.1, uvicorn 0.52.4, Starlette 1.6.0 |
 | Schema | Pydantic 2.12.5, jsonschema 4.26.0 |
@@ -18,11 +19,16 @@ remain in progress-log.md (S-001–S-003). Final findings are mapped in finding-
 | Vertex | google-cloud-aiplatform 1.71.1; native async/response/configuration fixtures |
 | Together | 2.2.0; bounded sync iterator bridge/Chat response fixtures |
 | xAI | 1.8.1; native protobuf response wrapper/configuration/history fixtures |
-| Checks | pytest 9.0.2, Ruff 0.15.6, mypy 1.19.1 |
+| Checks | pytest 9.0.2, Ruff 0.15.6, mypy 1.19.1, types-jsonschema 4.26.0.20260518 |
 
 SDK fixtures do not qualify live provider models or every option. No credentials or
 provider network requests were used. Library dependency ranges and Python >=3.11 are
-compatibility declarations; only the versions/platform above are measured. MCP 2.x
+a language floor and dependency declarations; only the versions/platform above are measured.
+Windows, macOS, Python 3.11/3.12/3.14 and unpinned SDK resolutions are unqualified.
+Before broadening support, rerun the full gate, real MCP transports, cancellation/process
+cleanup and isolated installs on the proposed platform/version. The current install
+harness uses POSIX venv paths; it is not a Windows qualification harness. No remote CI
+execution or live-service qualification is claimed. MCP 2.x
 is excluded, and other 1.x/protocol paths/extensions are not implied by the range.
 
 Reviewed primary references and installed signatures:
@@ -32,22 +38,37 @@ Reviewed primary references and installed signatures:
 [Google Gen AI SDK](https://googleapis.github.io/python-genai/),
 [xAI chat API](https://docs.x.ai/developers/grpc-api-reference/chat).
 
-## Regression evidence
+## Regression evidence and reproducible full gate
 
-- Reviewed baseline: 176 passed, two expected history warnings.
-- Four follow-up defects reproduced in six cases before implementation:
-  `pytest tests/test_followup.py -q` → six failures.
-- Intermediate in-process suite: 190 passed. Further boundary/provider cases were added.
-- Fresh locked environment:
-  `UV_CACHE_DIR=/tmp/synaptic-uv-cache UV_PROJECT_ENVIRONMENT=/tmp/synaptic-qualification-env uv sync --frozen --all-extras --python .venv/bin/python`.
-- `/tmp/synaptic-qualification-env/bin/pytest tests -q -W error::RuntimeWarning --tb=short`
-  → **238 passed, four warnings**: two expected history truncations and two upstream
-  Vertex/protobuf deprecations. All original tests remain; adapter ID assertions were
-  updated to the new native/stable ID contract rather than fixed synthesized indices.
-- The suite includes three real local MCP transport tests. Thread/SDK mock-HTTP tests
-  also require normal loop wakeup permissions. A sandbox thread-capacity test timed out,
-  then passed unchanged with local permissions; the sandbox mock-HTTP run was interrupted
-  after it stalled and passed with those permissions. No production workaround was added.
+- Historical gates: 176 original baseline tests, then 238 tests in S-007.
+- Control's two execution failures were reproduced in five cases before the fix:
+  `pytest tests/test_execution_recovery.py -q --tb=short` → **five failures**.
+- Current final full gate: **302 passed, four warnings**: two expected history
+  truncations and two upstream Vertex/protobuf deprecations. RuntimeWarning is an error.
+- This includes the original lifecycle/ownership/provider suites and three real MCP
+  transport tests, plus sync/async/stream/external executor receipt and cancellation
+  coverage, observers, output validation, scheduler queues and serialized reconciliation.
+
+Reproduce with uv 0.12.10 and CPython 3.13.8 from the repository root:
+
+```sh
+UV_CACHE_DIR=/tmp/synaptic-uv-cache UV_PROJECT_ENVIRONMENT=/tmp/synaptic-readiness-env uv sync --frozen --all-extras --python 3.13.8
+/tmp/synaptic-readiness-env/bin/python scripts/check_quality.py
+```
+
+The gate prints measured interpreter/tool versions, runs fatal Ruff, checks **all 90
+runtime-package source files** with mypy and then runs the full test suite. Mypy uses
+`--config-file pyproject.toml --no-incremental synaptic`, normal import following and
+`check_untyped_defs=true`; no project module is excluded or followed with skip. Tests
+and scripts receive fatal lint and execution checks; they are not claimed as strictly
+type-annotated. Fresh pre-fix full-body analysis found **132 errors in 28 of 88 files**;
+current analysis reports **zero errors in 90 files**. The older 81-error/ten-module
+reports used a different gate and are preserved only as historical measurements.
+
+Local stdio/socket/thread wakeup fixtures need ordinary local permissions. Earlier
+sandbox stalls passed unchanged with those permissions; no production workaround or
+transport skip was added. Provider fixtures use SDK objects/MockTransport and never
+contact provider services. The final gate passed in a newly created frozen environment.
 
 ## Packaging evidence
 
@@ -73,21 +94,26 @@ and temporary environments live outside the repository; no artifacts/credentials
 `uv.lock` pins the complete development resolution; no claim is made that an unpinned
 consumer resolves identical transitive dependencies.
 
-## Static checks and implementation limits
+## Typing boundaries and implementation limits
 
-- `.venv/bin/ruff check --target-version py311 --select E9,F63,F7,F82 synaptic tests scripts` passed.
-- `.venv/bin/mypy --follow-imports=skip --check-untyped-defs synaptic/core/_awaitables.py synaptic/core/_completion.py synaptic/core/_metadata.py synaptic/core/capabilities.py synaptic/mcp/_connection.py synaptic/mcp/_discovery.py synaptic/mcp/_transport.py synaptic/mcp/results.py synaptic/mcp/errors.py synaptic/mcp/session.py` passed: ten focused modules.
-- `.venv/bin/mypy --follow-imports=skip synaptic` reports **81 errors in 14 files**,
-  checking 88 source files. Dynamic mixins, optional annotations and provider SDK typing
-  remain incomplete; there is no whole-project type-clean claim or attribution of every
-  issue to the old baseline.
-- `git diff --check` passed. Changed/new source modules are at most 200 lines. Formatting
-  was scoped to changed implementation; nine unrelated formatting-only diffs were backed
-  up, inspected and proven syntax-tree equivalent before restoration. Automatic review
-  rejected an earlier broad restoration proposal; it did not execute.
+- `scripts/check_quality.py` passed: fatal Ruff, full-package mypy, complete tests.
+- JSON Schema uses pinned `types-jsonschema==4.26.0.20260518` in the development group.
+- Only `vertexai`, `vertexai.*`, `xai_sdk` and `xai_sdk.*` have
+  `ignore_missing_imports=true`: the pinned SDK distributions omit `py.typed` metadata.
+  Their imported SDK symbols are untyped at that boundary; all Synaptic wrappers and
+  mixin bodies are still checked. SDK response/configuration fixtures exercise the
+  boundary at runtime. Remove those overrides when upstream ships usable typing.
+- There are no project-wide ignores, excluded owned files or `follow_imports=skip`.
+  This is a full-package baseline typing gate, not strict typing of every dynamic SDK
+  payload or complete annotations for every public argument.
+- `git diff --check`, fatal lint and changed/new source module <=200-line checks passed.
+  Formatting was scoped to touched implementation/tests.
 
 Discovery byte limits apply after SDK decoding. Idle eviction occurs on next use.
-Cancelling a thread await does not stop the effect or free actual capacity; sync deadlines
-cannot preempt blocking functions. Serialization requires JSON-compatible results and
-application-supplied token counters. Diagnostics can report/drop events and are not a
-reliable journal. These boundaries are specified in contracts.md, not hidden as future fixes.
+Cancelling an already-running thread or opaque external executor cannot stop/prove absence
+of effects; it remains uncertain. Not-yet-admitted cooperative work rechecks cancellation.
+Earlier receipts survive both failure and cancellation; reconciliation cannot replace them.
+The execution extension is in-memory evidence, not crash-proof durable exactly-once storage.
+Serialization requires JSON-compatible results and application-supplied token counters.
+Diagnostics can report/drop events and are not a reliable journal. These boundaries are
+specified in contracts.md, not hidden as future fixes.

@@ -66,7 +66,8 @@ call = response.get_tool_call("search")
 
 ## Completing Tool Calls
 
-Agents use `complete_tool_call` to attach results atomically:
+Agents publish results incrementally before observers or the next effect. Use
+`complete_tool_call` to supply or explicitly reconcile an entire exchange:
 
 ```python
 from synaptic import complete_tool_call
@@ -80,3 +81,8 @@ If a history is passed and the response is not already present, it is added.
 
 When an agent continues after tools run, it calls the provider with
 `prompt=None`. That means no new `UserMem` is added for the continuation.
+
+`response.tool_outcomes` is a detached call-ID snapshot of serialized execution states.
+Partial receipts survive later exceptions/cancellation. Incomplete exchanges require
+explicit reconciliation; include known receipts unchanged. See [contracts](../contracts.md)
+for status meanings and replay/cancellation boundaries.

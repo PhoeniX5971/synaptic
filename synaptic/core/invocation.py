@@ -27,8 +27,21 @@ class Invocation:
     _values: Any = field(default=None, repr=False)
     _output: Any = field(default=None, repr=False)
 
+    _dispatch: Any = field(default=None, repr=False)
+
+    def check_cancelled(self) -> None:
+        """Recheck this execution scope after an executor-owned wait."""
+        if self._dispatch:
+            self._dispatch.check()
+
+    def begin_effect(self) -> None:
+        """Gate and mark admission immediately before an external effect."""
+        if self._dispatch:
+            self._dispatch.begin()
+
     def execute(self):
         """Execute a captured callable with a private copy of the validated arguments."""
+        self.begin_effect()
         return self._function(**copy.deepcopy(self._values))
 
     def validate_output(self, result):
@@ -42,6 +55,8 @@ class Executor(Protocol):
 
 class LocalExecutor:
     """Sequential inline executor, or explicit bounded thread scheduling."""
+
+    manages_admission = True
 
     def __init__(self, scheduler=None):
         self.scheduler = scheduler

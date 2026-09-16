@@ -12,7 +12,7 @@ from ...core.base.content import references, message_text
 
 
 def history_contents(history, role_map) -> List[Content]:
-    contents = []
+    contents: list[Content] = []
     if history is None:
         return contents
     for mem in history.effective_mems():
@@ -22,7 +22,9 @@ def history_contents(history, role_map) -> List[Content]:
                     role="model",
                     parts=[Part.from_text(message_text(mem) or "")]
                     + [
-                        Part.from_dict({"function_call": {"name": call.name, "args": call.args}})
+                        Part.from_dict(
+                            {"function_call": {"name": call.name, "args": call.args}}
+                        )
                         for call in mem.tool_calls
                     ],
                 )
@@ -61,7 +63,8 @@ def audio_parts(audio: Optional[List[str]]) -> List[Part]:
         data, mime = read_media(src)
         parts.append(
             Part.from_data(
-                data=data, mime_type=mime if mime and mime.startswith("audio/") else "audio/mpeg"
+                data=data,
+                mime_type=mime if mime and mime.startswith("audio/") else "audio/mpeg",
             )
         )
     return parts
@@ -100,5 +103,7 @@ def response_mem(response) -> ResponseMem:
         tool_calls=calls,
         input_tokens=getattr(um, "prompt_token_count", None),
         output_tokens=getattr(um, "candidates_token_count", None),
-        finish_reason=str(response.candidates[0].finish_reason) if response.candidates else None,
+        finish_reason=str(response.candidates[0].finish_reason)
+        if response.candidates
+        else None,
     )

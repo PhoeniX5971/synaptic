@@ -17,7 +17,7 @@ from ...core.tool import ToolCall
 
 def image_to_data_url(img: Any) -> str:
     try:
-        from PIL import Image as PILImage  # type: ignore
+        from PIL import Image as PILImage
 
         if isinstance(img, PILImage.Image):
             buf = BytesIO()

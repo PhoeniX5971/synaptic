@@ -54,3 +54,18 @@ a durable effect journal must implement it at their executor/storage boundary.
 
 Public semantics and limits: [contracts](contracts.md). Provider differences:
 [capability matrix](provider-matrix.md). Executed evidence: [qualification](qualification.md).
+
+## Readiness follow-up: execution evidence and admission
+
+ResponseMem is the canonical per-turn execution record. Model/Agent attach it before
+side effects, then a response-scoped ExecutionState publishes receipts and call-ID states
+incrementally into existing serializable extensions. Event and diagnostic observers are
+downstream of receipt publication. Exceptions preserve the same response; incomplete
+history is rejected before provider continuation until the consumer reconciles it.
+
+Invocation carries the cancellation/admission gate across the executor boundary.
+Local admission occurs immediately before calling the captured function, including inside
+a scheduled worker. Cooperative external executors use the same gate after their own
+queues; opaque executors are conservatively considered started at handoff. Started work
+can remain uncertain after cancellation. This is an in-memory evidence boundary; durable
+storage, remote idempotency and authoritative reconciliation remain consumer-owned.

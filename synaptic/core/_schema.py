@@ -10,7 +10,7 @@ from jsonschema import Draft202012Validator
 
 def infer(function, descriptions):
     hints = get_type_hints(function)
-    fields = {}
+    fields: dict[str, Any] = {}
     for name, parameter in inspect.signature(function).parameters.items():
         if name in ("self", "cls"):
             continue
@@ -24,7 +24,10 @@ def infer(function, descriptions):
             )
         annotation = hints.get(name, Any)
         default = ... if parameter.default is inspect.Parameter.empty else parameter.default
-        fields[name] = (annotation, Field(default=default, description=descriptions.get(name, "")))
+        fields[name] = (
+            annotation,
+            Field(default=default, description=descriptions.get(name, "")),
+        )
     try:
         model = create_model(
             function.__name__ + "Arguments", __config__=ConfigDict(extra="forbid"), **fields

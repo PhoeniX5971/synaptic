@@ -4,11 +4,12 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 from ..core._completion import Completion
 from ..core._runner import astream as model_stream
-from ..core.base import ResponseChunk, complete_tool_call
+from ..core.base import ResponseChunk
 from ..signal.collector import collect as _signal_collect
 from ..signal.dsl import build_dsl_instructions
 from .session import BudgetExceeded
 from ..core._ownership import guarded
+from ..core._execution_state import ExecutionState, check_cancelled
 import asyncio
 
 _PROTOCOL_REPROMPT = (
@@ -16,7 +17,10 @@ _PROTOCOL_REPROMPT = (
 )
 
 
-class AgentStream:
+from ._state import AgentState
+
+
+class AgentStream(AgentState):
     @guarded
     async def astream(
         self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
@@ -27,6 +31,7 @@ class AgentStream:
             self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
             protocol_retries = 0
             for _ in range(self.max_turns):
+                check_cancelled(abort)
                 self._prepare_turn()
                 completion = Completion()
                 final_seen = False
@@ -56,9 +61,9 @@ class AgentStream:
                         if not chunk.is_final and chunk.text:
                             await self.events.aemit("text_delta", chunk.text)
                         yield chunk
-                except BaseException:
+                except BaseException as error:
                     partial = completion.memory(created)
-                    partial.extensions["incomplete"] = True
+                    ExecutionState(partial, abort).interrupt(error)
                     self.session.history.add(partial)
                     raise
                 finally:
@@ -68,12 +73,9 @@ class AgentStream:
                 mem = completion.memory(created)
                 tool_calls = mem.tool_calls
                 self.session.history.add(mem)
-                await self.events.aemit("step_end", mem)
+                await self._atool_results(tool_calls, mem, abort)
                 if tool_calls:
                     protocol_retries = 0
-                    complete_tool_call(
-                        mem, await self._atool_results(tool_calls), self.session.history
-                    )
                     next_prompt = None
                     role = "user"
                     continue

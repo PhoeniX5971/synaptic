@@ -38,7 +38,8 @@ def response_memory(response):
 
 
 async def assemble(source, abort=None):
-    pending, text, usage, finish, response_id = {}, "", None, None, None
+    pending: dict[int, dict] = {}
+    text, usage, finish, response_id = "", None, None, None
     try:
         async for chunk in source:
             if abort and abort.is_set():

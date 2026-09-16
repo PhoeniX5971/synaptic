@@ -12,7 +12,9 @@ cd synaptic
 pip install -e ".[openai]"
 ```
 
-Python 3.11+ is required. Core installation (`pip install -e .`) includes no provider SDKs.
+Python 3.11+ is the declared floor; qualification is CPython 3.13.8 on Linux x86_64
+with the pinned SDKs. Windows and other Python/platform versions are unqualified.
+Core installation (`pip install -e .`) includes no provider SDKs.
 Choose extras: `openai`, `deepseek`, `claude`, `gemini`, `vertex`, `together`, `xai`,
 `mcp`, or `all`. Pass credentials explicitly or configure the chosen SDK environment;
 Synaptic does not load `.env` files. See [runtime contracts](docs/contracts.md),
