@@ -5,7 +5,10 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, List
 
-from xai_sdk.chat import assistant, text, tool_result, user
+from xai_sdk.chat import assistant, system, image, text, tool_result, user
+from .._media import image_url
+from ...core.base.content import references, message_text
+from .._chat import arguments
 from xai_sdk.proto import chat_pb2
 
 from ...core.base import ResponseMem
@@ -42,7 +45,7 @@ def history_messages(history) -> List[chat_pb2.Message]:
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             calls = [
                 chat_pb2.ToolCall(
-                    id=f"call_{idx}_{i}",
+                    id=call.id,
                     function=chat_pb2.FunctionCall(
                         name=call.name,
                         arguments=json.dumps(call.args) if call.args else "{}",
@@ -50,27 +53,32 @@ def history_messages(history) -> List[chat_pb2.Message]:
                 )
                 for i, call in enumerate(memory.tool_calls)
             ]
-            messages.append(chat_pb2.Message(
-                role=chat_pb2.MessageRole.ROLE_ASSISTANT,
-                content=[text(memory.message or "")],
-                tool_calls=calls,
-            ))
+            messages.append(
+                chat_pb2.Message(
+                    role=chat_pb2.MessageRole.ROLE_ASSISTANT,
+                    content=[text(message_text(memory) or "")],
+                    tool_calls=calls,
+                )
+            )
             for i, (_, result) in enumerate(zip(memory.tool_calls, memory.tool_results or [])):
-                value = json.dumps(result.get("result", result.get("error", result))) if isinstance(result, dict) else str(result)
-                messages.append(tool_result(value, tool_call_id=f"call_{idx}_{i}"))
+                value = (
+                    json.dumps(result.get("result", result.get("error", result)))
+                    if isinstance(result, dict)
+                    else str(result)
+                )
+                messages.append(tool_result(value, tool_call_id=memory.tool_calls[i].id))
         elif memory.role == "assistant":
-            messages.append(assistant(text(memory.message or "")))
+            messages.append(assistant(text(message_text(memory) or "")))
         else:
-            messages.append(user(text(memory.message or "")))
+            parts = [text(message_text(memory) or "")]
+            parts.extend(image(image_url(src)) for src in references(memory, "image"))
+            messages.append((system if memory.role == "system" else user)(*parts))
     return messages
 
 
 def parse_calls(response: Any) -> List[ToolCall]:
     calls: List[ToolCall] = []
     for tc in response.tool_calls:
-        try:
-            args = json.loads(tc.function.arguments) if tc.function.arguments else {}
-        except json.JSONDecodeError:
-            args = {}
-        calls.append(ToolCall(name=tc.function.name, args=args))
+        args = arguments(tc.function.arguments)
+        calls.append(ToolCall(name=tc.function.name, args=args, id=getattr(tc, "id", None)))
     return calls

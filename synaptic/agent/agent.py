@@ -1,24 +1,29 @@
+from ._stream import AgentStream
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, List, Optional
+from typing import Callable, List, Optional
 
-from ..core._completion import Completion
-from ..core._runner import run_tools_async, run_tools_sync
-from ..core.base import ResponseChunk, ResponseMem, UserMem, complete_tool_call
+from ..core.base import ResponseMem, UserMem, complete_tool_call
 from ..core.model import Model
-from ..core.tool import Tool, ToolCall, ToolRegistry
+from ..core.base.content import media_content
+from ..core.tool import Tool, ToolRegistry
 from ..logging import _bus
-from ..signal.collector import SignalMode, collect as _signal_collect, needs_text_mode
+from ..signal.collector import SignalMode, needs_text_mode
 from ..signal.dsl import DSLParser, build_dsl_instructions
-from ..signal.events import ToolCallResult as _SignalTCR
-from . import _perm
+from . import _execution
+from ..core.invocation import LocalExecutor
 from .events import EventBus
-from .session import Session
+from .session import Session, BudgetExceeded
+from ..core._ownership import guarded
+import sys
+import asyncio
 
 Permission = Callable[[str, dict], bool]
-_PROTOCOL_REPROMPT = "No <tool> or <final> emitted. Emit <tool> to continue or <final></final> to finish."
+_PROTOCOL_REPROMPT = (
+    "No <tool> or <final> emitted. Emit <tool> to continue or <final></final> to finish."
+)
 
 
-class Agent:
+class Agent(AgentStream, _execution.AgentExecution):
     def __init__(
         self,
         model: Model,
@@ -31,34 +36,52 @@ class Agent:
         signals: Optional[EventBus] = None,
         signal_mode: SignalMode = SignalMode.NONE,
         max_protocol_retries: int = 2,
+        executor=None,
+        policy_required: bool = False,
     ) -> None:
+        if getattr(model, "_operation_owner", None) is not None:
+            raise RuntimeError("Cannot attach an Agent to an active Model")
+        if max_turns < 1 or max_protocol_retries < 0:
+            raise ValueError("Positive turn budget and nonnegative protocol retry budget required")
         self.model = model
         self.session = session or Session()
         self.max_turns = max_turns
         self.permission = permission
+        self.executor, self.policy_required = executor or LocalExecutor(), policy_required
         self.events = events or EventBus()
         self.signals = signals
         self._registry = tool_registry or ToolRegistry()
-        for t in (tools or []):
+        for t in tools or []:
             self._registry.register(t)
         self._base_instructions = model.instructions or ""
         self._text_mode = needs_text_mode(model.provider, signal_mode)
         self._dsl_parser = None
         if self._text_mode:
             self._dsl_parser = DSLParser()
-            model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
+            model.instructions = self._base_instructions + build_dsl_instructions(
+                self._registry.all().values()
+            )
         else:
             model.bind_tools(list(self._registry.all().values()))
+        self._managed_names = set(self._registry.all())
         self.max_protocol_retries = max_protocol_retries
         self.model.history = self.session.history
 
     def on(self, event: str, fn) -> None:
-        self.events.on(event, fn)
+        return self.events.on(event, fn)
 
     def register_block(self, name: str, handler=None) -> None:
         if self._dsl_parser is None:
             raise RuntimeError("register_block requires signal mode")
         self._dsl_parser.register(name, handler)
+
+    def _prepare_turn(self):
+        self._turn_tools = self._registry.all()
+        if not self._text_mode:
+            if hasattr(self.model, "unbind_tools"):
+                self.model.unbind_tools(*self._managed_names)
+                self.model.bind_tools(list(self._turn_tools.values()), replace=True)
+            self._managed_names = set(self._turn_tools)
 
     def _start(self) -> None:
         if self.session.state != "idle":
@@ -68,49 +91,43 @@ class Agent:
         _bus.emit({"type": "agent.start", "session_id": self.session.id})
 
     def _finish(self) -> None:
-        self.session.state = "done"
+        error = sys.exc_info()[1]
+        outcome = (
+            "cancelled"
+            if isinstance(error, (asyncio.CancelledError, GeneratorExit))
+            else "exhausted"
+            if isinstance(error, BudgetExceeded)
+            else "failed"
+            if error is not None
+            else "completed"
+        )
+        self.session.outcome = outcome
+        self.session.state = "done" if outcome == "completed" else outcome
         _bus.emit({"type": "agent.end", "session_id": self.session.id})
 
-    def _add_user(self, prompt: Optional[str], role: str) -> None:
-        if prompt is not None:
+    def _add_user(self, prompt: Optional[str], role: str, images=None, audio=None) -> None:
+        if prompt is not None or images or audio:
             created = datetime.now().astimezone(timezone.utc)
-            self.session.history.add(UserMem(message=prompt, role=role, created=created))
+            self.session.history.add(
+                UserMem(
+                    message=prompt or "",
+                    role=role,
+                    created=created,
+                    content=media_content(images, audio),
+                )
+            )
 
-    def _tool_results(self, calls: List[ToolCall]) -> List[Any]:
-        results: List[Any] = []
-        for call in calls:
-            self.events.emit("tool_start", call)
-            if not _perm.allow(self.permission, call):
-                result = {"name": call.name, "error": "Permission denied"}
-            else:
-                result = run_tools_sync(list(self._registry.all().values()), self.model.blacklist, [call])[0]
-            self.events.emit("tool_end", call, result)
-            _bus.emit({"type": "agent.tool", "session_id": self.session.id, "name": call.name, "args": call.args, "result": result})
-            results.append(result)
-        return results
-
-    async def _atool_results(self, calls: List[ToolCall]) -> List[Any]:
-        results: List[Any] = []
-        for call in calls:
-            await self.events.aemit("tool_start", call)
-            if not await _perm.aallow(self.permission, call):
-                result = {"name": call.name, "error": "Permission denied"}
-            else:
-                result = (await run_tools_async(list(self._registry.all().values()), self.model.blacklist, [call]))[0]
-            await self.events.aemit("tool_end", call, result)
-            if self.signals:
-                await self.signals.aemit("ToolCallResult", _SignalTCR(call=call, result=result))
-            _bus.emit({"type": "agent.tool", "session_id": self.session.id, "name": call.name, "args": call.args, "result": result})
-            results.append(result)
-        return results
-
+    @guarded
     def run(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
         self._start()
         try:
-            next_prompt = prompt
-            self._add_user(prompt, role)
+            next_prompt = None
+            self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
             for _ in range(self.max_turns):
-                mem = self.model.invoke(next_prompt, role=role, autorun=False, automem=False, **kwargs)
+                self._prepare_turn()
+                mem = self.model.invoke(
+                    next_prompt, role=role, autorun=False, automem=False, **kwargs
+                )
                 self.session.history.add(mem)
                 self.events.emit("step_end", mem)
                 if not mem.tool_calls:
@@ -118,71 +135,30 @@ class Agent:
                 complete_tool_call(mem, self._tool_results(mem.tool_calls), self.session.history)
                 next_prompt = None
                 role = "user"
-            raise RuntimeError("Agent reached max_turns")
+            raise BudgetExceeded("Agent reached max_turns")
         finally:
             self._finish()
 
+    @guarded
     async def arun(self, prompt: Optional[str], role: str = "user", **kwargs) -> ResponseMem:
         self._start()
         try:
-            next_prompt = prompt
-            self._add_user(prompt, role)
+            next_prompt = None
+            self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
             for _ in range(self.max_turns):
-                mem = await self.model.ainvoke(next_prompt, role=role, autorun=False, automem=False, **kwargs)
+                self._prepare_turn()
+                mem = await self.model.ainvoke(
+                    next_prompt, role=role, autorun=False, automem=False, **kwargs
+                )
                 self.session.history.add(mem)
                 await self.events.aemit("step_end", mem)
                 if not mem.tool_calls:
                     return mem
-                complete_tool_call(mem, await self._atool_results(mem.tool_calls), self.session.history)
+                complete_tool_call(
+                    mem, await self._atool_results(mem.tool_calls), self.session.history
+                )
                 next_prompt = None
                 role = "user"
-            raise RuntimeError("Agent reached max_turns")
-        finally:
-            self._finish()
-
-    async def astream(
-        self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
-    ) -> AsyncIterator[ResponseChunk]:
-        self._start()
-        try:
-            next_prompt = prompt
-            self._add_user(prompt, role)
-            protocol_retries = 0
-            for _ in range(self.max_turns):
-                completion = Completion()
-                final_seen = False
-                created = datetime.now().astimezone(timezone.utc)
-                if self._text_mode:
-                    self.model.instructions = self._base_instructions + build_dsl_instructions(self._registry.all().values())
-                _s = self.model.llm.astream(prompt=next_prompt, role=role, abort=abort, **kwargs)
-                if self.signals:
-                    _s = _signal_collect(_s, self.signals, self._text_mode, self._dsl_parser)
-                async for chunk in _s:
-                    if abort and abort.is_set():
-                        return
-                    completion.add(chunk)
-                    if chunk.final: final_seen = True
-                    if not chunk.is_final and chunk.text:
-                        await self.events.aemit("text_delta", chunk.text)
-                    yield chunk
-                mem = completion.memory(created)
-                tool_calls = mem.tool_calls
-                self.session.history.add(mem)
-                await self.events.aemit("step_end", mem)
-                if tool_calls:
-                    protocol_retries = 0
-                    complete_tool_call(mem, await self._atool_results(tool_calls), self.session.history)
-                    next_prompt = None
-                    role = "user"
-                    continue
-                if not self._text_mode or not self.signals or final_seen:
-                    return
-                if protocol_retries >= self.max_protocol_retries:
-                    raise RuntimeError("Agent reached max_protocol_retries")
-                protocol_retries += 1
-                next_prompt = _PROTOCOL_REPROMPT
-                role = "user"
-
-            raise RuntimeError("Agent reached max_turns")
+            raise BudgetExceeded("Agent reached max_turns")
         finally:
             self._finish()

@@ -3,67 +3,22 @@ import types
 from typing import Any, Callable, Dict, List, Optional
 
 
-class ToolRegistry:
-    """Collection of tools for one model, agent, session, or application."""
-
-    def __init__(self) -> None:
-        self._tools: Dict[str, "Tool"] = {}
-        self._callbacks: List[Callable[[], None]] = []
-
-    def register(self, tool: "Tool") -> None:
-        """Add or replace a tool by name and notify adapter subscribers."""
-        self._tools[tool.name] = tool
-        self._notify()
-
-    def register_many(self, tools: List["Tool"]) -> None:
-        for tool in tools:
-            self._tools[tool.name] = tool
-        if tools:
-            self._notify()
-
-    def unregister(self, name: str) -> None:
-        if name in self._tools:
-            del self._tools[name]
-            self._notify()
-
-    def unregister_prefix(self, prefix: str) -> None:
-        names = [name for name in self._tools if name.startswith(prefix)]
-        for name in names:
-            del self._tools[name]
-        if names:
-            self._notify()
-
-    def _notify(self) -> None:
-        for cb in self._callbacks:
-            cb()
-
-    def on_change(self, fn: Callable[[], None]) -> None:
-        self._callbacks.append(fn)
-
-    def all(self) -> Dict[str, "Tool"]:
-        return self._tools
-
-    def autotool(
-        self,
-        description: str = "",
-        param_descriptions: Optional[Dict[str, str]] = None,
-        default_params: Optional[dict] = None,
-    ) -> Callable:
-        return autotool(
-            description=description,
-            param_descriptions=param_descriptions,
-            default_params=default_params,
-            registry=self,
-        )
+from ._registry import ToolRegistry, Subscription
+from ._schema import infer, effective
+from .invocation import Invocation, freeze
+import copy
+from uuid import uuid4
 
 
 _default_registry = ToolRegistry()
 TOOL_REGISTRY: Dict[str, "Tool"] = _default_registry._tools
 
 
-def register_callback(fn: Callable[[], None], registry: Optional[ToolRegistry] = None) -> None:
+def register_callback(
+    fn: Callable[[], None], registry: Optional[ToolRegistry] = None
+) -> Subscription:
     """Subscribe to changes on a registry, defaulting to the process-wide one."""
-    (registry or _default_registry).on_change(fn)
+    return (registry or _default_registry).on_change(fn)
 
 
 def collect_tools(
@@ -92,20 +47,61 @@ class Tool:
         default_params: Optional[dict] = None,
         add_to_registry: bool = True,
         registry: Optional[ToolRegistry] = None,
+        input_model=None,
+        output_adapter=None,
+        metadata=None,
+        identity=None,
     ) -> None:
         self.name = name
-        self.declaration = declaration
+        self._declaration = copy.deepcopy(declaration)
+        self.input_model, self.output_adapter = input_model, output_adapter
+        self._metadata, self.identity = copy.deepcopy(metadata or {}), identity
         if not callable(function):
             raise ValueError("Function must be a callable")
         self.function = function
         self.is_async = inspect.iscoroutinefunction(function)
-        self.default_params = default_params or {}
+        self._default_params = copy.deepcopy(default_params or {})
 
+        self.run = self._run_async if self.is_async else self._run_sync
+        self._sealed = True
         if add_to_registry:
             target = registry or _default_registry
             target.register(self)
 
-        self.run = self._run_async if self.is_async else self._run_sync
+    def __setattr__(self, name, value):
+        if getattr(self, "_sealed", False):
+            raise AttributeError("Tool definitions are immutable; replace the registration")
+        object.__setattr__(self, name, value)
+
+    @property
+    def declaration(self):
+        return copy.deepcopy(self._declaration)
+
+    @property
+    def default_params(self):
+        return copy.deepcopy(self._default_params)
+
+    @property
+    def metadata(self):
+        return copy.deepcopy(self._metadata)
+
+    def prepare(self, call):
+        values, json_values = effective(
+            self.function,
+            self._default_params,
+            call.args,
+            self._declaration.get("parameters", {}),
+            self.input_model,
+        )
+        return Invocation(
+            self.name,
+            call.id,
+            freeze(json_values),
+            self.identity,
+            self.function,
+            values,
+            self.output_adapter,
+        )
 
     def __get__(self, instance, owner):
         """Bind decorated methods to their instance without re-registering."""
@@ -117,23 +113,34 @@ class Tool:
             function=types.MethodType(self.function, instance),
             default_params=self.default_params,
             add_to_registry=False,
+            input_model=self.input_model,
+            output_adapter=self.output_adapter,
+            metadata=self.metadata,
+            identity=self.identity,
         )
 
     def _run_sync(self, **kwargs):
         """Run a sync tool with defaults merged before call-time arguments."""
-        return self.function(**{**self.default_params, **kwargs})
+        invocation = self.prepare(ToolCall(self.name, kwargs))
+        value = invocation.execute()
+        from ._awaitables import require_sync
+
+        value = require_sync(value, "Async tool result requires async execution")
+        return invocation.validate_output(value)
 
     async def _run_async(self, **kwargs):
         """Run an async tool with defaults merged before call-time arguments."""
-        return await self.function(**{**self.default_params, **kwargs})
+        invocation = self.prepare(ToolCall(self.name, kwargs))
+        return invocation.validate_output(await invocation.execute())
 
 
 class ToolCall:
     """Parsed model request to call a named tool with JSON-like arguments."""
 
-    def __init__(self, name: str, args: dict):
+    def __init__(self, name: str, args: dict, id: str | None = None):
         self.name = name
-        self.args = args
+        self.args = copy.deepcopy(args)
+        self.id = id or "call_" + uuid4().hex
 
     def get_arg(self, key: str):
         return self.args.get(key)
@@ -157,37 +164,21 @@ def autotool(
     param_descriptions = param_descriptions or {}
 
     def decorator(func: Callable[..., Any]) -> Tool:
-        sig = inspect.signature(func)
-        properties: dict = {}
-        required: list = []
-
-        for pname, param in sig.parameters.items():
-            if pname in ("self", "cls"):
-                continue
-            anno = param.annotation
-            ptype = (
-                "number" if anno is float
-                else "integer" if anno is int
-                else "boolean" if anno is bool
-                else "array" if anno in (list,) or (hasattr(anno, "__origin__") and anno.__origin__ is list)
-                else "object" if anno is dict or (hasattr(anno, "__origin__") and anno.__origin__ is dict)
-                else "string"
-            )
-            properties[pname] = {"type": ptype, "description": param_descriptions.get(pname, "")}
-            if param.default is inspect.Parameter.empty:
-                required.append(pname)
-
-        parameters = {"type": "object", "properties": properties}
-        if required:
-            parameters["required"] = required
+        model, parameters, output = infer(func, param_descriptions)
 
         return Tool(
             name=func.__name__,
-            declaration={"name": func.__name__, "description": description, "parameters": parameters},
+            declaration={
+                "name": func.__name__,
+                "description": description,
+                "parameters": parameters,
+            },
             function=func,
             default_params=default_params,
             add_to_registry=autobind,
             registry=registry,
+            input_model=model,
+            output_adapter=output,
         )
 
     return decorator

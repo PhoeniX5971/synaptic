@@ -20,7 +20,9 @@ class Completion:
         elif not self.text:
             # Final text is a snapshot, not a delta. Support final-only adapters.
             self.text = chunk.text or ""
-        if chunk.function_call:
+        if chunk.function_call and all(
+            call.id != chunk.function_call.id for call in self.tool_calls
+        ):
             self.tool_calls.append(chunk.function_call)
         for field in ("input_tokens", "output_tokens", "finish_reason"):
             value = getattr(chunk, field, None)

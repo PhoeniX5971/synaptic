@@ -1,9 +1,12 @@
+import asyncio
+from uuid import uuid4
 from typing import Dict, Iterable, List, Optional
 
 from ..core.tool import Tool, ToolRegistry
 from .servers import MCPServer
 from .session import MCPSession
 from .tools import make_tool
+from ._hub_runtime import HubRuntime
 
 
 class MCPHub:
@@ -11,55 +14,109 @@ class MCPHub:
         self,
         servers: Iterable[MCPServer],
         registry: Optional[ToolRegistry] = None,
-    ) -> None:
+        *,
+        concurrency=4,
+        max_connections=16,
+        max_servers=128,
+        timeout=30.0,
+        idle_timeout=300.0,
+        reconnect_backoff=1.0,
+    ):
+        if isinstance(max_servers, bool) or not isinstance(max_servers, int) or max_servers < 1:
+            raise ValueError("max_servers must be a positive integer")
         self.registry = registry or ToolRegistry()
-        self.sessions: Dict[str, MCPSession] = {}
-        self.loaded: Dict[str, List[str]] = {}
+        self.sessions, self.loaded = {}, {}
+        self._id = uuid4().hex
+        self._locks = {}
+        self._versions = {}
         for server in servers:
-            if server.name in self.sessions:
-                raise ValueError(f"Duplicate MCP server name: {server.name}")
+            if server.name in self.sessions or len(self.sessions) >= max_servers:
+                raise ValueError("Duplicate server or maximum server count exceeded")
             self.sessions[server.name] = MCPSession(server)
+            self._locks[server.name] = asyncio.Lock()
+        self.runtime = HubRuntime(
+            self.sessions,
+            concurrency=concurrency,
+            max_connections=max_connections,
+            timeout=timeout,
+            idle_timeout=idle_timeout,
+            reconnect_backoff=reconnect_backoff,
+        )
 
     async def load_server(self, name: str, refresh: bool = False) -> List[str]:
         session = self._session(name)
-        tools = await session.list_tools(refresh=refresh)
-        self.unload_server(name)
-        synaptic_tools = [make_tool(name, mcp_tool, session) for mcp_tool in tools]
-        self.registry.register_many(synaptic_tools)
-        names = [tool.name for tool in synaptic_tools]
-        self.loaded[name] = names
-        return names
+        # Tests/integrations may replace session implementations before first load.
+        self.runtime.sessions = self.sessions
+        async with self._locks[name]:
+            version = self._versions.get(name, 0)
+            async with self.runtime.operation(name):
+                tools = await session.list_tools(refresh=refresh)
+
+                async def invoke(tool, arguments):
+                    return await self.runtime.call(name, tool, arguments)
+
+                replacements = [make_tool(name, tool, session, invoke=invoke) for tool in tools]
+                names = [tool.name for tool in replacements]
+                if (
+                    self.runtime.closed
+                    or name in self.runtime.draining
+                    or version != self._versions.get(name, 0)
+                ):
+                    raise RuntimeError("Catalog changed or closed during refresh")
+
+                def publish():
+                    self.loaded = {**self.loaded, name: names}
+
+                self.registry.replace_owned((self._id, name), replacements, publish=publish)
+                return list(names)
 
     async def load_all(self) -> Dict[str, List[str]]:
-        loaded = {}
-        for name in self.sessions:
-            loaded[name] = await self.load_server(name)
-        return loaded
+        """Bounded workers; per-server exceptions are returned alongside successful catalogs."""
+        return await self.runtime.map_load(list(self.sessions), self.load_server)
 
     def unload_server(self, name: str) -> None:
+        """Remove discovery visibility only; existing calls and connection remain owned."""
+        self._versions[name] = self._versions.get(name, 0) + 1
         if name in self.loaded:
-            self.loaded.pop(name)
-            self.registry.unregister_prefix(f"{name}__")
+
+            def publish():
+                self.loaded = {key: value for key, value in self.loaded.items() if key != name}
+
+            self.registry.replace_owned((self._id, name), [], publish=publish)
 
     def unload_all(self) -> None:
         for name in list(self.loaded):
             self.unload_server(name)
 
-    async def close(self) -> None:
+    async def disconnect_server(self, name):
+        """Drain active calls and close transport, retaining catalog visibility."""
+        self.runtime.sessions = self.sessions
+        await self.runtime.disconnect(name)
+
+    async def remove_server(self, name):
+        """Drain, disconnect, remove registrations/config and invalidate stale wrappers."""
+        async with self._locks[name]:
+            await self.disconnect_server(name)
+            self.unload_server(name)
+            self.runtime.draining.add(name)
+            self.sessions.pop(name)
+
+    async def close(self):
+        self.runtime.closed = True
         self.unload_all()
-        errors = []
-        for session in self.sessions.values():
-            try:
-                await session.close()
-            except Exception as exc:
-                errors.append(exc)
+        self.registry.replace_owned((self._id, None), [])
+        results = await self.runtime.map_load(list(self.sessions), self.disconnect_server)
+        errors = [result for result in results.values() if isinstance(result, Exception)]
         if errors:
             raise ExceptionGroup("MCP close errors", errors)
 
+    def resolve_alias(self, alias):
+        """Reverse a provider alias through the current immutable definition snapshot."""
+        return self.registry.all()[alias].identity
+
     def enable_routing(self) -> List[Tool]:
         tools = [self._list_servers_tool(), self._load_tool(), self._unload_tool()]
-        for tool in tools:
-            self.registry.register(tool)
+        self.registry.replace_owned((self._id, None), tools)
         return tools
 
     def _session(self, name: str) -> MCPSession:

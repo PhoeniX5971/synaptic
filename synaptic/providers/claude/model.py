@@ -1,20 +1,25 @@
+from ._stream import ClaudeStream
 import json
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import anthropic
-from dotenv import load_dotenv
 
-from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem, ToolCallArgsDelta
+from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
-from .helpers import history_messages, safe_json, schema_for
+from .helpers import history_messages, schema_for
 
-load_dotenv()
 
 _STRUCTURED_OUTPUT_TOOL = "__structured_output__"
 
 
-class ClaudeAdapter(BaseModel):
+from ...core.capabilities import Capabilities
+from .._media import claude_content
+
+
+class ClaudeAdapter(ClaudeStream, BaseModel):
+    capabilities = Capabilities(images=True)
+
     def __init__(
         self,
         model: str,
@@ -42,7 +47,7 @@ class ClaudeAdapter(BaseModel):
         self.max_tokens = max_tokens
         self.tool_registry = tool_registry
 
-        register_callback(self._invalidate_tools, tool_registry)
+        self._subscription = register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self) -> None:
@@ -55,7 +60,9 @@ class ClaudeAdapter(BaseModel):
             {
                 "name": t.declaration["name"],
                 "description": t.declaration.get("description", ""),
-                "input_schema": t.declaration.get("parameters", {"type": "object", "properties": {}}),
+                "input_schema": t.declaration.get(
+                    "parameters", {"type": "object", "properties": {}}
+                ),
             }
             for t in all_tools.values()
         ]
@@ -64,10 +71,12 @@ class ClaudeAdapter(BaseModel):
     def to_contents(self) -> List[Dict[str, Any]]:
         return history_messages(self.history)
 
-    def _build_request(self, prompt: Optional[str], role: str, **kwargs) -> Dict[str, Any]:
+    def _build_request(
+        self, prompt: Optional[str], role: str, images=None, **kwargs
+    ) -> Dict[str, Any]:
         messages = self.to_contents()
-        if prompt is not None:
-            messages.append({"role": role, "content": prompt})
+        if prompt is not None or images:
+            messages.append({"role": role, "content": claude_content(prompt, images)})
 
         params: Dict[str, Any] = {
             "model": self.model,
@@ -82,26 +91,30 @@ class ClaudeAdapter(BaseModel):
         if self.response_format == ResponseFormat.JSON and self.response_schema is not None:
             # Use tool-forcing for reliable structured/Pydantic JSON output
             schema = schema_for(self.response_schema)
-            params["tools"] = [{
-                "name": _STRUCTURED_OUTPUT_TOOL,
-                "description": "Return the structured response conforming to the required schema.",
-                "input_schema": schema,
-            }]
+            params["tools"] = [
+                {
+                    "name": _STRUCTURED_OUTPUT_TOOL,
+                    "description": "Return the structured response conforming to the required schema.",
+                    "input_schema": schema,
+                }
+            ]
             params["tool_choice"] = {"type": "tool", "name": _STRUCTURED_OUTPUT_TOOL}
         elif self.claude_tools and self.response_format == ResponseFormat.NONE:
             params["tools"] = self.claude_tools
 
-        return params
+        return {**params, **kwargs}
 
     def invoke(
         self,
         prompt: Optional[str],
         role: str = "user",
         audio: Optional[List[str]] = None,
+        images=None,
         **kwargs,
     ) -> ResponseMem:
+        self.capabilities.check("invoke", images=images, audio=audio)
         role = "assistant" if role == "assistant" else "user"
-        params = self._build_request(prompt, role, **kwargs)
+        params = self._build_request(prompt, role, images=images, **kwargs)
 
         response = self.client.messages.create(**params)
 
@@ -116,83 +129,17 @@ class ClaudeAdapter(BaseModel):
                 if block.name == _STRUCTURED_OUTPUT_TOOL:
                     message = json.dumps(block.input)
                 else:
-                    tool_calls.append(ToolCall(name=block.name, args=block.input or {}))
+                    tool_calls.append(
+                        ToolCall(name=block.name, args=block.input or {}, id=block.id)
+                    )
 
         usage = getattr(response, "usage", None)
         return ResponseMem(
-            message=message, created=created, tool_calls=tool_calls,
-            input_tokens=getattr(usage, "input_tokens", 0) or 0,
-            output_tokens=getattr(usage, "output_tokens", 0) or 0,
+            message=message,
+            created=created,
+            tool_calls=tool_calls,
+            input_tokens=getattr(usage, "input_tokens", None),
+            output_tokens=getattr(usage, "output_tokens", None),
+            finish_reason=getattr(response, "stop_reason", None),
+            extensions={"response_id": getattr(response, "id", None)},
         )
-
-    async def astream(
-        self,
-        prompt: Optional[str],
-        role: str = "user",
-        audio: Optional[List[str]] = None,
-        abort=None,
-        **kwargs,
-    ) -> AsyncIterator[ResponseChunk]:
-        role = "assistant" if role == "assistant" else "user"
-        params = self._build_request(prompt, role, **kwargs)
-
-        accumulated_message = ""
-        tool_calls: List[ToolCall] = []
-        active_tool_name: Optional[str] = None
-        active_tool_json: str = ""
-        is_structured_output_block = False
-        input_tokens = 0
-        output_tokens = 0
-
-        async with self.async_client.messages.stream(**params) as stream:
-            async for event in stream:
-                if abort and abort.is_set():
-                    return
-
-                event_type = getattr(event, "type", None)
-
-                if event_type == "message_start":
-                    u = getattr(getattr(event, "message", None), "usage", None)
-                    if u:
-                        input_tokens = getattr(u, "input_tokens", 0) or 0
-                elif event_type == "message_delta":
-                    u = getattr(event, "usage", None)
-                    if u:
-                        output_tokens = getattr(u, "output_tokens", 0) or 0
-                elif event_type == "content_block_start":
-                    block = getattr(event, "content_block", None)
-                    if block and getattr(block, "type", None) == "tool_use":
-                        active_tool_name = block.name
-                        active_tool_json = ""
-                        is_structured_output_block = (block.name == _STRUCTURED_OUTPUT_TOOL)
-
-                elif event_type == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    if delta is None:
-                        continue
-                    delta_type = getattr(delta, "type", None)
-                    if delta_type == "text_delta":
-                        accumulated_message += delta.text
-                        yield ResponseChunk(text=delta.text, is_final=False, function_call=None)
-                    elif delta_type == "input_json_delta":
-                        active_tool_json += delta.partial_json
-                        if not is_structured_output_block and active_tool_name:
-                            yield ResponseChunk(text="", tool_call_delta=ToolCallArgsDelta(active_tool_name, delta.partial_json, active_tool_json))
-
-                elif event_type == "content_block_stop":
-                    if active_tool_name is not None:
-                        args = safe_json(active_tool_json)
-                        if is_structured_output_block:
-                            json_str = json.dumps(args)
-                            accumulated_message = json_str
-                            yield ResponseChunk(text=json_str, is_final=False, function_call=None)
-                        else:
-                            tfc = ToolCall(name=active_tool_name, args=args)
-                            tool_calls.append(tfc)
-                            yield ResponseChunk(text="", is_final=False, function_call=tfc)
-                        active_tool_name = None
-                        active_tool_json = ""
-                        is_structured_output_block = False
-
-        yield ResponseChunk(text=accumulated_message, is_final=True, function_call=None,
-                            input_tokens=input_tokens, output_tokens=output_tokens)

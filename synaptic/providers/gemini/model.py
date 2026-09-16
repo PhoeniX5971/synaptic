@@ -1,18 +1,21 @@
+from ._stream import GeminiStream
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, List, Optional
+from typing import Any, List, Optional
 
 import google.genai as genai
-from dotenv import load_dotenv
 from google.genai import types
 
-from ...core.base import BaseModel, History, ResponseChunk, ResponseFormat, ResponseMem
+from ...core.base import BaseModel, History, ResponseFormat, ResponseMem
 from ...core.tool import Tool, ToolCall, ToolRegistry, collect_tools, register_callback
 from .helpers import build_audio_parts, build_image_parts, history_contents
 
-load_dotenv()
+
+from ...core.capabilities import Capabilities
 
 
-class GeminiAdapter(BaseModel):
+class GeminiAdapter(GeminiStream, BaseModel):
+    capabilities = Capabilities(images=True, audio=True)
+
     def __init__(
         self,
         model: str,
@@ -24,18 +27,20 @@ class GeminiAdapter(BaseModel):
         temperature: float = 0.8,
         instructions: str = "",
         tool_registry: Optional[ToolRegistry] = None,
+        max_tokens: int = 1024,
     ):
         self.client = genai.Client(api_key=api_key)
         self.model = model
         self.bound_tools = list(tools or [])
         self.synaptic_tools = list(tools or [])
         self.gemini_tools: List[types.Tool] = []
+        self.max_tokens = max_tokens
         self.temperature = temperature
         self.history = history
         self.response_format = response_format
         self.response_schema = response_schema
         self.tool_registry = tool_registry
-        register_callback(self._invalidate_tools, tool_registry)
+        self._subscription = register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
         self.instructions = instructions
         self.role_map = {
@@ -66,8 +71,10 @@ class GeminiAdapter(BaseModel):
         **kwargs,
     ) -> ResponseMem:
         config = types.GenerateContentConfig(
-            temperature=self.temperature,
+            temperature=kwargs.pop("temperature", self.temperature),
+            max_output_tokens=kwargs.pop("max_tokens", self.max_tokens),
             tools=self.gemini_tools,
+            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             system_instruction=self.instructions or None,
         )
         role = self.role_map.get(role, "user")
@@ -94,7 +101,7 @@ class GeminiAdapter(BaseModel):
         prompt_parts.extend(build_audio_parts(audio))
 
         if prompt_parts:
-            contents.append(types.Content(role=self.role_map.get(role, "user"), parts=prompt_parts))
+            contents.append(types.Content(role=role, parts=prompt_parts))
 
         response = self.client.models.generate_content(
             model=self.model, contents=contents, config=config, **kwargs
@@ -116,75 +123,18 @@ class GeminiAdapter(BaseModel):
                             ToolCall(
                                 name=part.function_call.name,  # type: ignore
                                 args=part.function_call.args or {},
+                                id=getattr(part.function_call, "id", None),
                             )
                         )
 
         um = getattr(response, "usage_metadata", None)
         return ResponseMem(
-            message=message, created=created, tool_calls=tool_calls,
-            input_tokens=getattr(um, "prompt_token_count", 0) or 0,
-            output_tokens=getattr(um, "candidates_token_count", 0) or 0,
-        )
-
-    async def astream(
-        self, prompt: Optional[str], role: str = "user", images: Optional[List[str]] = None,
-        audio: Optional[List[str]] = None, abort=None, **kwargs
-    ) -> AsyncIterator[ResponseChunk]:
-        role = self.role_map.get(role, "user")
-
-        prompt_parts: list[types.Part] = []
-        if prompt and prompt.strip():
-            prompt_parts.append(types.Part(text=prompt))
-        prompt_parts.extend(build_image_parts(images))
-        prompt_parts.extend(build_audio_parts(audio))
-
-        contents = self.to_contents()
-        if prompt_parts:
-            contents.append(types.Content(role=role, parts=prompt_parts))
-
-        config = types.GenerateContentConfig(
-            temperature=self.temperature,
-            tools=self.gemini_tools,
-            system_instruction=self.instructions or None,
-        )
-        if self.response_format == ResponseFormat.NONE:
-            config.response_mime_type = "text/plain"
-        elif self.response_format == ResponseFormat.JSON:
-            config.response_mime_type = "application/json"
-            if self.response_schema is not None:
-                config.response_schema = self.response_schema
-            config.tools = None
-
-        accumulated_message = ""
-        tool_calls: List[ToolCall] = []
-        usage_metadata = None
-
-        async for response in await self.client.aio.models.generate_content_stream(  # type: ignore[union-attr]
-            model=self.model, contents=contents, config=config, **kwargs  # type: ignore[arg-type]
-        ):
-            if abort and abort.is_set():
-                return
-            if getattr(response, "usage_metadata", None):
-                usage_metadata = response.usage_metadata
-            candidates = getattr(response, "candidates", None)
-            if not candidates:
-                continue
-            candidate = candidates[0]
-            if not candidate or not candidate.content or not candidate.content.parts:
-                continue
-            for part in candidate.content.parts:
-                text = getattr(part, "text", None)
-                if text:
-                    accumulated_message += text
-                    yield ResponseChunk(text=text, is_final=False, function_call=None)
-                fc = getattr(part, "function_call", None)
-                if fc:
-                    tfc = ToolCall(name=fc.name, args=fc.args or {})  # type: ignore[union-attr]
-                    tool_calls.append(tfc)
-                    yield ResponseChunk(text="", is_final=False, function_call=tfc)
-
-        yield ResponseChunk(
-            text=accumulated_message, is_final=True, function_call=None,
-            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            message=message,
+            created=created,
+            tool_calls=tool_calls,
+            input_tokens=getattr(um, "prompt_token_count", None),
+            output_tokens=getattr(um, "candidates_token_count", None),
+            finish_reason=str(response.candidates[0].finish_reason)
+            if response.candidates
+            else None,
         )

@@ -6,6 +6,8 @@ from typing import List, Optional
 from google.genai import types
 
 from ...core.base import ResponseMem
+from ...core.base.content import references, message_text
+from .._media import read_media
 
 
 # -----------------------------
@@ -18,12 +20,7 @@ def guess_mime_type(path: str) -> str:
 
 def _load_bytes(src: str) -> tuple[bytes, str]:
     """Read bytes from a local path or URL, returning (data, mime_type)."""
-    p = Path(src)
-    if p.exists():
-        return p.read_bytes(), guess_mime_type(src)
-    with urllib.request.urlopen(src) as resp:
-        mime = resp.headers.get_content_type() or guess_mime_type(src)
-        return resp.read(), mime
+    return read_media(src)
 
 
 # -----------------------------
@@ -67,25 +64,39 @@ def history_contents(history, role_map) -> list[types.Content]:
     for memory in history.effective_mems():
         if isinstance(memory, ResponseMem) and memory.tool_calls:
             parts: list[types.Part] = []
-            if memory.message:
-                parts.append(types.Part(text=memory.message))
+            if message_text(memory):
+                parts.append(types.Part(text=message_text(memory)))
             for call in memory.tool_calls:
-                parts.append(types.Part(
-                    function_call=types.FunctionCall(name=call.name, args=call.args)
-                ))
+                parts.append(
+                    types.Part(
+                        function_call=types.FunctionCall(name=call.name, args=call.args, id=call.id)
+                    )
+                )
             contents.append(types.Content(role="model", parts=parts))
             results = getattr(memory, "tool_results", None) or []
             response_parts: list[types.Part] = []
             for call, result in zip(memory.tool_calls, results):
-                resp = result.get("result", result.get("error", "")) if isinstance(result, dict) else str(result)
-                response_parts.append(types.Part(
-                    function_response=types.FunctionResponse(name=call.name, response={"result": resp})
-                ))
+                resp = (
+                    result.get("result", result.get("error", ""))
+                    if isinstance(result, dict)
+                    else str(result)
+                )
+                response_parts.append(
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            name=call.name, response={"result": resp}, id=call.id
+                        )
+                    )
+                )
             if response_parts:
                 contents.append(types.Content(role="user", parts=response_parts))
         else:
-            contents.append(types.Content(
-                role=role_map.get(memory.role, "user"),
-                parts=[types.Part(text=memory.message)],
-            ))
+            contents.append(
+                types.Content(
+                    role=role_map.get(memory.role, "user"),
+                    parts=[types.Part(text=message_text(memory))]
+                    + build_image_parts(references(memory, "image"))
+                    + build_audio_parts(references(memory, "audio")),
+                )
+            )
     return contents

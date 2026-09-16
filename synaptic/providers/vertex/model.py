@@ -1,8 +1,8 @@
+import inspect
 import asyncio
 import threading
 from typing import Any, AsyncIterator, List, Optional
 
-from dotenv import load_dotenv
 from vertexai import init as vertex_init
 from vertexai.generative_models import (
     Content,
@@ -17,10 +17,13 @@ from ...core.tool import ToolCall, ToolRegistry, collect_tools, register_callbac
 from ...core.tool import Tool as ST
 from .helpers import audio_parts, generation_config, history_contents, response_mem
 
-load_dotenv()
+
+from ...core.capabilities import Capabilities
 
 
 class VertexAdapter(BaseModel):
+    capabilities = Capabilities(audio=True, native_call_ids=False)
+
     def __init__(
         self,
         model: str,
@@ -34,11 +37,13 @@ class VertexAdapter(BaseModel):
         temperature: float = 0.8,
         instructions: str = "",
         tool_registry: Optional[ToolRegistry] = None,
+        max_tokens: int = 1024,
     ):
         vertex_init(project=project, location=location)
 
         self.model_name = model
         self.model = GenerativeModel(model)
+        self.max_tokens = max_tokens
         self.temperature = temperature
         self.history = history
         self.bound_tools = list(tools or [])
@@ -55,7 +60,7 @@ class VertexAdapter(BaseModel):
             "system": "user",
         }
 
-        register_callback(self._invalidate_tools, tool_registry)
+        self._subscription = register_callback(self._invalidate_tools, tool_registry)
         self._invalidate_tools()
 
     def _invalidate_tools(self):
@@ -88,7 +93,9 @@ class VertexAdapter(BaseModel):
     def to_contents(self) -> List[Content]:
         return history_contents(self.history, self.role_map)
 
-    def _messages(self, prompt: Optional[str], role: str, audio: Optional[List[str]]) -> List[Content]:
+    def _messages(
+        self, prompt: Optional[str], role: str, audio: Optional[List[str]]
+    ) -> List[Content]:
         role = self.role_map.get(role, "user")
         messages: List[Content] = self.to_contents()
         if prompt is not None or audio:
@@ -99,82 +106,94 @@ class VertexAdapter(BaseModel):
             messages = [system_msg] + messages
         return messages
 
-    def invoke(self, prompt: Optional[str], role: str = "user", audio: Optional[List[str]] = None, **kwargs) -> ResponseMem:
+    def invoke(
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        audio: Optional[List[str]] = None,
+        images=None,
+        **kwargs,
+    ) -> ResponseMem:
+        self.capabilities.check("invoke", images=images, audio=audio)
         messages = self._messages(prompt, role, audio)
         response = self.model.generate_content(
             messages,
-            generation_config=generation_config(self.response_format, self.temperature),
+            generation_config=generation_config(
+                self.response_format,
+                kwargs.pop("temperature", self.temperature),
+                kwargs.pop("max_tokens", self.max_tokens),
+                self.response_schema,
+            ),
             tools=self.vertex_tools,
+            **kwargs,
         )
         return response_mem(response)
 
     async def astream(
-        self, prompt: Optional[str], role: str = "user", audio: Optional[List[str]] = None,
-        abort=None, **kwargs
+        self,
+        prompt: Optional[str],
+        role: str = "user",
+        audio: Optional[List[str]] = None,
+        images=None,
+        abort=None,
+        **kwargs,
     ) -> AsyncIterator[ResponseChunk]:
-        """
-        Asynchronously stream response chunks from Vertex AI.
-
-        Runs generate_content_stream synchronously in a background thread and
-        pushes responses into an asyncio.Queue.
-        """
+        """Use the SDK native asynchronous streaming API."""
+        self.capabilities.check("invoke", images=images, audio=audio)
         messages = self._messages(prompt, role, audio)
-        config = generation_config(self.response_format, self.temperature)
-        loop = asyncio.get_running_loop()
-        q: asyncio.Queue[Optional[Any]] = asyncio.Queue()
-
-        def producer():
-            try:
-                for response in self.model.generate_content_stream(
-                    messages,
-                    generation_config=config,
-                    tools=self.vertex_tools,
-                ):
-                    if abort and abort.is_set():
-                        break
-                    loop.call_soon_threadsafe(q.put_nowait, response)
-            except Exception as e:
-                loop.call_soon_threadsafe(q.put_nowait, e)
-            finally:
-                loop.call_soon_threadsafe(q.put_nowait, None)
-
-        threading.Thread(target=producer, daemon=True).start()
-
+        config = generation_config(
+            self.response_format,
+            kwargs.pop("temperature", self.temperature),
+            kwargs.pop("max_tokens", self.max_tokens),
+            self.response_schema,
+        )
         accumulated_message = ""
         tool_calls: List[ToolCall] = []
         usage_metadata = None
+        finish_reason = None
 
-        while True:
-            item = await q.get()
-            if abort and abort.is_set():
-                return
-            if isinstance(item, Exception):
-                raise item
-            if item is None:
-                break
+        source = await self.model.generate_content_async(
+            messages, generation_config=config, tools=self.vertex_tools, stream=True, **kwargs
+        )
+        try:
+            async for response in source:
+                if abort and abort.is_set():
+                    raise asyncio.CancelledError()
+                if getattr(response, "usage_metadata", None):
+                    usage_metadata = response.usage_metadata
+                if not getattr(response, "candidates", None):
+                    continue
 
-            response = item
-            if getattr(response, "usage_metadata", None):
-                usage_metadata = response.usage_metadata
-            if not getattr(response, "candidates", None):
-                continue
+                cand = response.candidates[0]
+                finish_reason = (
+                    str(cand.finish_reason)
+                    if getattr(cand, "finish_reason", None)
+                    else finish_reason
+                )
 
-            cand = response.candidates[0]
+                if cand.function_calls:
+                    for fc in cand.function_calls:
+                        tfc = ToolCall(name=fc.name, args=dict(fc.args) or {})
+                        tool_calls.append(tfc)
+                        yield ResponseChunk(text="", is_final=False, function_call=tfc)
 
-            if cand.function_calls:
-                for fc in cand.function_calls:
-                    tfc = ToolCall(name=fc.name, args=dict(fc.args) or {})
-                    tool_calls.append(tfc)
-                    yield ResponseChunk(text="", is_final=False, function_call=tfc)
-
-            if cand.content and cand.content.parts:
-                for part in cand.content.parts:
-                    if part.text:
-                        accumulated_message += part.text
-                        yield ResponseChunk(text=part.text, is_final=False, function_call=None)
+                if cand.content and cand.content.parts:
+                    for part in cand.content.parts:
+                        if part.text:
+                            accumulated_message += part.text
+                            yield ResponseChunk(text=part.text, is_final=False, function_call=None)
+        finally:
+            close = getattr(source, "aclose", None) or getattr(source, "close", None)
+            if close:
+                result = close()
+                if inspect.isawaitable(result):
+                    await result
 
         yield ResponseChunk(
-            text=accumulated_message, is_final=True, function_call=None,
-            input_tokens=getattr(usage_metadata, "prompt_token_count", 0) or 0,
-            output_tokens=getattr(usage_metadata, "candidates_token_count", 0) or 0,
+            text=accumulated_message,
+            is_final=True,
+            function_call=None,
+            input_tokens=getattr(usage_metadata, "prompt_token_count", None),
+            output_tokens=getattr(usage_metadata, "candidates_token_count", None),
+            finish_reason=finish_reason,
         )

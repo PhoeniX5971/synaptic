@@ -4,6 +4,7 @@ from typing import Any, Optional
 import enum
 
 from .memory import ResponseMem
+from .._metadata import finish_reason as normalize_finish
 
 
 class ResponseFormat(enum.StrEnum):
@@ -14,9 +15,10 @@ class ResponseFormat(enum.StrEnum):
 @dataclass
 class ToolCallArgsDelta:
     """Partial tool-call argument fragment streamed before the call completes."""
+
     name: str
-    delta: str      # this token's fragment
-    snapshot: str   # full args accumulated so far
+    delta: str  # this token's fragment
+    snapshot: str  # full args accumulated so far
 
 
 @dataclass
@@ -27,14 +29,25 @@ class ResponseChunk:
     is_final: bool = False
     function_call: Optional[Any] = None
     tool_call_delta: Optional[ToolCallArgsDelta] = None
-    finish_reason: Optional[str] = None   # "stop" | "tool_calls" | "max_tokens"
+    finish_reason: Optional[str] = None  # "stop" | "tool_calls" | "max_tokens"
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     final: bool = False
     extensions: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        self.extensions = dict(self.extensions)
+        self.finish_reason = normalize_finish(self.finish_reason, self.extensions)
 
-class BaseModel(ABC):
+
+from ...providers._lifecycle import AdapterLifecycle
+
+
+class BaseModel(AdapterLifecycle, ABC):
     @abstractmethod
     def invoke(self, prompt: Optional[str], **kwargs) -> ResponseMem:
         pass
+
+    async def astream(self, prompt: Optional[str], **kwargs):
+        raise NotImplementedError("Provider does not support asynchronous streaming")
+        yield
