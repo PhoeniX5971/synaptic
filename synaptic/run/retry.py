@@ -1,172 +1,124 @@
+"""Bounded retries for safe generation; visible output and tool effects are barriers."""
+
 import asyncio
 import time
-import math
 from functools import wraps
-from typing import Tuple, Type
+
+from ._retry_policy import RetryPolicy
 
 
-def _validate(max_retries: int, delay: float) -> None:
-    if isinstance(max_retries, bool) or not isinstance(max_retries, int) or max_retries < 0:
-        raise ValueError("max_retries must be a nonnegative integer")
-    if not math.isfinite(delay) or delay < 0:
-        raise ValueError("delay must be finite and nonnegative")
+def retry(max_retries=3, delay=0.5, exceptions=(Exception,), **options):
+    """Generic caller-responsible decorator. Repetition must be safe for this callable.
 
-
-def retry(
-    max_retries: int = 3,
-    delay: float = 0.5,
-    exceptions: Tuple[Type[Exception], ...] = (Exception,),
-):
+    Sync deadlines bound scheduling, not an already-running blocking function.
+    Async attempts have a total deadline. Cancellation never proves no side effect.
     """
-    Decorator that retries a sync or async function on failure.
+    policy = RetryPolicy(max_retries, delay, exceptions=exceptions, **options)
 
-    The caller must ensure repeated execution is safe; effects are not rolled back.
+    def decorate(function):
+        if asyncio.iscoroutinefunction(function):
 
-    Usage:
-        @retry(max_retries=3, delay=1.0)
-        def call():
-            return model.invoke("...")
-
-        @retry(max_retries=3)
-        async def acall():
-            return await model.ainvoke("...")
-    """
-
-    _validate(max_retries, delay)
-
-    def decorator(fn):
-        if asyncio.iscoroutinefunction(fn):
-
-            @wraps(fn)
+            @wraps(function)
             async def async_wrapper(*args, **kwargs):
-                last_exc: Exception
-                for attempt in range(max_retries + 1):
-                    try:
-                        return await fn(*args, **kwargs)
-                    except exceptions as e:
-                        last_exc = e
-                        if attempt < max_retries:
-                            await asyncio.sleep(delay)
-                raise last_exc  # type: ignore[possibly-undefined]
+                async with asyncio.timeout(policy.deadline):
+                    start = time.monotonic()
+                    for attempt in range(policy.retries + 1):
+                        try:
+                            return await function(*args, **kwargs)
+                        except Exception as error:
+                            pause = policy.pause(
+                                attempt, error, policy.deadline - (time.monotonic() - start)
+                            )
+                            if pause is None:
+                                raise
+                            await asyncio.sleep(pause)
 
             return async_wrapper
 
-        @wraps(fn)
-        def sync_wrapper(*args, **kwargs):
-            last_exc: Exception
-            for attempt in range(max_retries + 1):
+        @wraps(function)
+        def wrapper(*args, **kwargs):
+            start = time.monotonic()
+            for attempt in range(policy.retries + 1):
                 try:
-                    return fn(*args, **kwargs)
-                except exceptions as e:
-                    last_exc = e
-                    if attempt < max_retries:
-                        time.sleep(delay)
-            raise last_exc  # type: ignore[possibly-undefined]
+                    return function(*args, **kwargs)
+                except Exception as error:
+                    pause = policy.pause(
+                        attempt, error, policy.deadline - (time.monotonic() - start)
+                    )
+                    if pause is None:
+                        raise
+                    time.sleep(pause)
 
-        return sync_wrapper
+        return wrapper
 
-    return decorator
+    return decorate
 
 
 class Retry:
-    """
-    Wraps a Model instance to add retry logic to invoke / ainvoke / astream.
-
-    Usage:
-        model = Model(provider=Provider.OPENAI, ...)
-        robust = Retry(model, max_retries=3, delay=1.0)
-
-        response = robust.invoke("Hello")
-        response = await robust.ainvoke("Hello")
-        async for chunk in robust.astream("Hello"):
-            print(chunk.text, end="")
-
-    Any attribute not found on Retry is forwarded to the wrapped model,
-    so Retry is a transparent proxy (e.g. robust.history, robust.instructions).
-    """
-
     def __init__(
-        self,
-        model,
-        max_retries: int = 3,
-        delay: float = 0.5,
-        exceptions: Tuple[Type[Exception], ...] = (ConnectionError, TimeoutError),
-        retry_safe: bool = False,
+        self, model, max_retries=3, delay=0.5, exceptions=None, retry_safe=False, **options
     ):
-        _validate(max_retries, delay)
-        self._retry_safe = retry_safe
         self._model = model
-        self._max_retries = max_retries
-        self._delay = delay
-        self._exceptions = exceptions
+        self._retry_safe = retry_safe
+        self._policy = RetryPolicy(max_retries, delay, exceptions=exceptions, **options)
 
-    def _can_retry(self, kwargs) -> bool:
+    def _can_retry(self, kwargs):
         autorun = kwargs.get("autorun")
         if autorun is None:
             autorun = getattr(self._model, "autorun", None)
         return autorun is False or (autorun is not True and self._retry_safe)
 
-    # ------------------------------------------------------------------
-    # Sync
-    # ------------------------------------------------------------------
     def invoke(self, *args, **kwargs):
-        last_exc: Exception
-        for attempt in range(self._max_retries + 1):
-            try:
-                return self._model.invoke(*args, **kwargs)
-            except self._exceptions as e:
-                if not self._can_retry(kwargs):
-                    raise
-                last_exc = e
-                if attempt < self._max_retries:
-                    time.sleep(self._delay)
-        raise last_exc  # type: ignore[possibly-undefined]
+        if not self._can_retry(kwargs):
+            return self._model.invoke(*args, **kwargs)
+        return self._wrap(self._model.invoke)(*args, **kwargs)
 
-    # ------------------------------------------------------------------
-    # Async
-    # ------------------------------------------------------------------
     async def ainvoke(self, *args, **kwargs):
-        last_exc: Exception
-        for attempt in range(self._max_retries + 1):
-            try:
-                return await self._model.ainvoke(*args, **kwargs)
-            except self._exceptions as e:
-                if not self._can_retry(kwargs):
-                    raise
-                last_exc = e
-                if attempt < self._max_retries:
-                    await asyncio.sleep(self._delay)
-        raise last_exc  # type: ignore[possibly-undefined]
+        if not self._can_retry(kwargs):
+            return await self._model.ainvoke(*args, **kwargs)
+        return await self._wrap(self._model.ainvoke)(*args, **kwargs)
+
+    def _wrap(self, function):
+        p = self._policy
+        return retry(
+            p.retries,
+            p.delay,
+            exceptions=None,
+            multiplier=p.multiplier,
+            max_delay=p.max_delay,
+            jitter=p.jitter,
+            deadline=p.deadline,
+            predicate=p.predicate,
+        )(function)
 
     async def astream(self, *args, **kwargs):
-        """
-        Retry transient failures only before the first yielded chunk.
-
-        Tool-executing models are never transparently retried. Unknown producers
-        require retry_safe=True, asserting no effects occur before a yield.
-        After any visible chunk, the original error propagates without restart.
-        """
+        p = self._policy
+        start = time.monotonic()
         emitted = False
-        last_exc: Exception
-        for attempt in range(self._max_retries + 1):
-            try:
-                async for chunk in self._model.astream(*args, **kwargs):
-                    emitted = True
-                    yield chunk
-                return
-            except self._exceptions as e:
-                if emitted or not self._can_retry(kwargs):
-                    raise
-                last_exc = e
-                if attempt < self._max_retries:
-                    await asyncio.sleep(self._delay)
-        raise last_exc  # type: ignore[possibly-undefined]
+        async with asyncio.timeout(p.deadline):
+            for attempt in range(p.retries + 1):
+                source = self._model.astream(*args, **kwargs)
+                try:
+                    async for chunk in source:
+                        emitted = True
+                        yield chunk
+                    return
+                except Exception as error:
+                    if emitted or not self._can_retry(kwargs):
+                        raise
+                    pause = p.pause(attempt, error, p.deadline - (time.monotonic() - start))
+                    if pause is None:
+                        raise
+                    await asyncio.sleep(pause)
+                finally:
+                    close = getattr(source, "aclose", None)
+                    if close:
+                        await close()
 
-    # Transparent proxy — forward everything else to the underlying model
-    def __getattr__(self, name: str):
+    def __getattr__(self, name):
         return getattr(self._model, name)
 
-    def __setattr__(self, name: str, value):
+    def __setattr__(self, name, value):
         if name.startswith("_"):
             super().__setattr__(name, value)
         else:
