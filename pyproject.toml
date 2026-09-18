@@ -33,6 +33,9 @@ dev = [
     "types-jsonschema==4.26.0.20260518",
 ]
 
+[tool.setuptools.package-data]
+synaptic = ["py.typed"]
+
 [tool.setuptools.packages.find]
 include = ["synaptic*"]
 

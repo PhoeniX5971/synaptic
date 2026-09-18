@@ -3,7 +3,7 @@
 import copy
 import json
 import warnings
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from ..tool import ToolCall
 from .._awaitables import require_sync
 from .memory import Memory, ResponseMem
@@ -26,20 +26,40 @@ class History:
         token_budget: Optional[int] = None,
         token_counter=None,
     ):
-        if size < 1 or (token_budget is not None and (token_budget < 1 or token_counter is None)):
+        if size < 1 or (
+            token_budget is not None and (token_budget < 1 or token_counter is None)
+        ):
             raise ValueError("Positive history size/budget and explicit token_counter required")
         self.token_budget, self.token_counter = token_budget, token_counter
         self.entries: List[Memory] = list(memory_list or [])
+        self.recovery: list[ResponseMem] = []
+        self.failed_attempts: list[ResponseMem] = []
+        for memory in self.entries:
+            self._retain(memory)
         self.size = size
         self.on_truncate = on_truncate
         self.dedup_tools = dedup_tools
+
+    def _retain(self, memory: Memory) -> None:
+        memory._histories.add(self)
+        if (
+            isinstance(memory, ResponseMem)
+            and (memory.tool_calls or memory.extensions.get("incomplete"))
+            and memory not in self.recovery
+        ):
+            self.recovery.append(memory)
+
+    def enforce_budget(self) -> None:
+        """Trim provider context as whole entries; recovery evidence is independent."""
+        self._size_update()
 
     def _size_update(self) -> None:
         excess = max(0, len(self.entries) - self.size)
         if self.token_budget is not None:
             while (
                 excess < len(self.entries)
-                and sum(self.token_counter(m) for m in self.entries[excess:]) > self.token_budget
+                and sum(self.token_counter(m) for m in self.entries[excess:])
+                > self.token_budget
             ):
                 excess += 1
         # Calls and results reside in one ResponseMem: never split that exchange.
@@ -48,7 +68,8 @@ class History:
             self.entries = self.entries[excess:]
             if self.on_truncate:
                 require_sync(
-                    self.on_truncate(dropped), "History truncation callbacks must be synchronous"
+                    self.on_truncate(dropped),
+                    "History truncation callbacks must be synchronous",
                 )
             else:
                 warnings.warn(
@@ -66,14 +87,15 @@ class History:
         return self.entries
 
     def add(self, memory: Memory) -> None:
+        self._retain(memory)
         self.entries.append(memory)
         self._size_update()
 
-    def to_dict(self):
+    def to_dict(self) -> dict[str, Any]:
         return _history_io.serialize(self)
 
     @classmethod
-    def from_dict(cls, value):
+    def from_dict(cls, value: dict[str, Any]) -> "History":
         return _history_io.deserialize(value)
 
     def effective_mems(self) -> List[Memory]:
@@ -84,6 +106,7 @@ class History:
         are stripped; if that leaves a ResponseMem with no calls and no text it
         is dropped entirely.
         """
+        self.enforce_budget()
         if not self.dedup_tools:
             return list(self.entries)
 

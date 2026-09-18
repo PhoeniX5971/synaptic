@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from check_consumer_types import check_types
 
 EXTRAS = {
     "core": None,
@@ -77,8 +78,21 @@ assert not any(name in sys.modules for name in ('openai', 'anthropic', 'google.g
                 env=environment,
                 stdout=subprocess.DEVNULL,
             )
+            if extra in ("core", "openai", "all"):
+                check_types(python, Path(temporary))
+                subprocess.run(
+                    [
+                        str(python),
+                        "-I",
+                        str(Path(__file__).resolve().parents[1] / "examples/offline.py"),
+                    ],
+                    check=True,
+                    cwd=temporary,
+                    env=environment,
+                )
             print(
-                json.dumps({"extra": extra, "status": "passed", "python": args.python}), flush=True
+                json.dumps({"extra": extra, "status": "passed", "python": args.python}),
+                flush=True,
             )
 
 

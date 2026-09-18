@@ -1,9 +1,9 @@
 from ._model_bindings import ModelBindings
-from typing import Any, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from . import _runner as _r
 from ._factory import build_adapter
-from .base import History, ResponseFormat, ResponseMem
+from .base import History, ResponseFormat, ResponseMem, ResponseChunk
 from .provider import Provider
 from .tool import Tool, ToolRegistry, collect_tools
 
@@ -90,10 +90,6 @@ class Model(ModelAPI, ModelBindings):
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools
 
-    # ------------------------------------------------------------------ #
-    # Properties                                                           #
-    # ------------------------------------------------------------------ #
-
     @property
     def history(self) -> History:
         return self._history
@@ -113,10 +109,6 @@ class Model(ModelAPI, ModelBindings):
         self._instructions = value
         if hasattr(self, "llm"):
             self.llm.instructions = value
-
-    # ------------------------------------------------------------------ #
-    # Tool binding                                                         #
-    # ------------------------------------------------------------------ #
 
     @guarded
     def invoke(
@@ -174,7 +166,7 @@ class Model(ModelAPI, ModelBindings):
         automem: bool | None = None,
         abort=None,
         **kwargs,
-    ):
+    ) -> AsyncIterator[ResponseChunk]:
         """Yield provider stream chunks, optionally stopping on `abort`."""
         with operation(self):
             source = _r.astream(

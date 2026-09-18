@@ -3,8 +3,11 @@
 import asyncio
 import time
 from functools import wraps
+from contextlib import nullcontext
 
 from ._retry_policy import RetryPolicy
+from ..core._attempt import attempt as generation_attempt
+from ..core._ownership import guarded
 
 
 def retry(max_retries=3, delay=0.5, exceptions=(Exception,), **options):
@@ -68,11 +71,13 @@ class Retry:
             autorun = getattr(self._model, "autorun", None)
         return autorun is False or (autorun is not True and self._retry_safe)
 
+    @guarded
     def invoke(self, *args, **kwargs):
         if not self._can_retry(kwargs):
             return self._model.invoke(*args, **kwargs)
         return self._wrap(self._model.invoke)(*args, **kwargs)
 
+    @guarded
     async def ainvoke(self, *args, **kwargs):
         if not self._can_retry(kwargs):
             return await self._model.ainvoke(*args, **kwargs)
@@ -80,6 +85,26 @@ class Retry:
 
     def _wrap(self, function):
         p = self._policy
+        blocked = False
+        if asyncio.iscoroutinefunction(function):
+
+            async def invoke_attempt(*args, **kwargs):
+                nonlocal blocked
+                with generation_attempt(self._model) as state:
+                    try:
+                        return await function(*args, **kwargs)
+                    finally:
+                        blocked = state.output if state else False
+        else:
+
+            def invoke_attempt(*args, **kwargs):
+                nonlocal blocked
+                with generation_attempt(self._model) as state:
+                    try:
+                        return function(*args, **kwargs)
+                    finally:
+                        blocked = state.output if state else False
+
         return retry(
             p.retries,
             p.delay,
@@ -88,9 +113,10 @@ class Retry:
             max_delay=p.max_delay,
             jitter=p.jitter,
             deadline=p.deadline,
-            predicate=p.predicate,
-        )(function)
+            predicate=lambda error: not blocked and p.predicate(error),
+        )(invoke_attempt)
 
+    @guarded
     async def astream(self, *args, **kwargs):
         p = self._policy
         start = time.monotonic()
@@ -99,9 +125,15 @@ class Retry:
             for attempt in range(p.retries + 1):
                 source = self._model.astream(*args, **kwargs)
                 try:
-                    async for chunk in source:
-                        emitted = True
-                        yield chunk
+                    context = (
+                        generation_attempt(self._model)
+                        if self._can_retry(kwargs)
+                        else nullcontext()
+                    )
+                    with context:
+                        async for chunk in source:
+                            emitted = True
+                            yield chunk
                     return
                 except Exception as error:
                     if emitted or not self._can_retry(kwargs):

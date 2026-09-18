@@ -116,3 +116,26 @@ Pass `abort` on sync, async or streaming Model/Agent calls. Custom delayed execu
 opt into `manages_admission=True` and use Invocation.check_cancelled/begin_effect after
 queue admission; existing opaque executors retain conservative uncertain-effect semantics.
 See contracts.md before implementing a custom executor.
+
+## Control integration review (T-011)
+
+- Retry + Model + automem now retries invisible effect-free generation failures without
+  duplicating prompts. Failed-attempt records live in history.failed_attempts (also with
+  automem disabled). Partial output and autorun effects remain replay barriers.
+- History.entries is now actively rechecked as bounded provider context after result
+  growth and before submission. An oversized exchange can disappear from context while
+  remaining in history.recovery. Inspect recovery for receipts and reconcile pending
+  entries there; dropping context no longer permits bypassing incomplete execution.
+- History v1 adds optional recovery/failed_attempts fields. New readers accept old records;
+  older software may discard the new sections and must not round-trip these snapshots.
+  Reattach token counters/budget policies after restoration. Retention is consumer-owned.
+- Contradictory IDs, mixed tagged/positional inputs and ambiguous partial positional
+  records now raise before mutation, including on restoration. Valid complete untagged
+  positional lists remain supported. Known receipts cannot be replaced by changing format.
+- Wheel/sdist now include py.typed. Model/Agent invocation signatures and Model stream/
+  proposal returns remain typed after ownership decoration. Dynamic SDK payloads and
+  generic Retry targets still have intentionally limited static typing.
+
+Run scripts/check_quality.py and scripts/check_release.py under the frozen development
+Python. The install harness now invokes the development host's mypy against each selected
+isolated target, so run it with that host rather than a bare core-only Python interpreter.

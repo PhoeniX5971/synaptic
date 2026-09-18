@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 from ._completion import Completion
+from . import _attempt
 from ..logging import _bus
 from ._runner import _check, _ctx, run_tools_async, remember
 from ._execution_state import ExecutionState, check_cancelled
@@ -49,11 +50,13 @@ async def astream(
     t0 = time.monotonic()
     completion = Completion()
 
+    _attempt.begin(model, prompt, role, images, audio)
     source = model.llm.astream(
         prompt=prompt, role=role, images=images, audio=audio, abort=abort, **kwargs
     )
     try:
         async for chunk in source:
+            _attempt.observe(model)
             if abort and abort.is_set():
                 raise asyncio.CancelledError()
             completion.add(chunk)
@@ -63,8 +66,8 @@ async def astream(
             yield chunk
     except BaseException as error:
         partial = completion.memory(created)
-        remember(model, partial, _automem, prompt, role, created, images, audio)
         ExecutionState(partial, abort).interrupt(error)
+        remember(model, partial, _automem, prompt, role, created, images, audio)
         raise
     finally:
         close = getattr(source, "aclose", None)
