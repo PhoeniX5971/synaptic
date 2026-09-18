@@ -4,6 +4,7 @@ from typing import Optional
 
 from .base import ResponseMem, UserMem
 from ._completion import Completion
+from . import _attempt
 from ._execution_state import ExecutionState, check_cancelled
 from .base.content import media_content
 from .capabilities import Capabilities, UnsupportedCapability
@@ -18,7 +19,8 @@ def _ctx(model) -> list:
 
 
 def _check(model, mode, images, audio):
-    for memory in model.history.entries:
+    model.history.enforce_budget()
+    for memory in [*model.history.entries, *model.history.recovery]:
         if getattr(memory, "extensions", {}).get("incomplete") or (
             getattr(memory, "tool_calls", None)
             and len(memory.tool_results) != len(memory.tool_calls)
@@ -66,7 +68,9 @@ def invoke(
     tools = list(getattr(model.llm, "synaptic_tools", ()))
     created = datetime.now().astimezone(timezone.utc)
     t0 = time.monotonic()
+    _attempt.begin(model, prompt, role, images, audio)
     memory = model.llm.invoke(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
+    _attempt.observe(model)
 
     if _bus.active():
         _bus.emit(
@@ -126,15 +130,17 @@ async def ainvoke(
 
     t0 = time.monotonic()
     completion = Completion()
+    _attempt.begin(model, prompt, role, images, audio)
     source = model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
     try:
         async for chunk in source:
+            _attempt.observe(model)
             completion.add(chunk)
             check_cancelled(abort)
     except BaseException as error:
         memory = completion.memory(created)
-        remember(model, memory, _automem, prompt, role, created, images, audio)
         ExecutionState(memory, abort).interrupt(error)
+        remember(model, memory, _automem, prompt, role, created, images, audio)
         raise
     finally:
         close = getattr(source, "aclose", None)
@@ -176,6 +182,8 @@ async def ainvoke(
 
 def remember(model, memory, automem, prompt, role, created, images, audio):
     model.last_response = memory
+    if _attempt.archive_failure(model, memory):
+        return
     if automem and model.history is not None:
         if prompt is not None or images or audio:
             model.history.add(

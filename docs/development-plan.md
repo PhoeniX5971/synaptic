@@ -12,6 +12,7 @@
 | T-008 | done | Explicit scheduling/outcomes, privacy, observer policies and finite retries |
 | T-009 | done | Multimodal history, optional SDKs, lock/install matrix and measured handoff |
 | T-010 | done | Control readiness: incremental receipts, cancellation admission, full typing and renewed qualification |
+| T-011 | done; reporting route pending maintainer | Public Retry/budget/reconciliation integrations, installed typing, tracked CI and release guidance; 360 tests and ten installs |
 
 Earlier findings are mapped to tests in finding-report.md. Control readiness follow-up
 evidence is in readiness-followup.md and qualification.md. Production records are the portable memory; local transcripts

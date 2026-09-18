@@ -69,3 +69,20 @@ a scheduled worker. Cooperative external executors use the same gate after their
 queues; opaque executors are conservatively considered started at handoff. Started work
 can remain uncertain after cancellation. This is an in-memory evidence boundary; durable
 storage, remote idempotency and authoritative reconciliation remain consumer-owned.
+
+## Integration follow-up: independent retention and distribution gates
+
+Retry's context-local generation-attempt owner routes only invisible effect-free failures
+to History.failed_attempts. Partial output, proposals and admitted effects retain normal
+execution barriers; history ownership spans the retry/backoff operation.
+
+History.entries is the provider context projection. History.recovery separately retains
+tool exchanges and incomplete responses across context truncation. Framework result
+publication, reconciliation and provider entry all recheck budgets; unresolved recovery
+blocks continuation regardless of context membership. Serialization preserves recovery
+and failed-attempt evidence with explicit new-reader compatibility rules.
+
+The source gate is complemented by installed-wheel consumer typing tests. py.typed,
+explicit exports and preserved decorator signatures expose useful public types without
+requiring optional SDKs in core-only installations. Tracked CI invokes the frozen quality
+and release scripts; actual remote-run evidence remains separate from local qualification.

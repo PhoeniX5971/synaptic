@@ -65,6 +65,7 @@ class ExecutionState:
             self.memory.extensions["incomplete"] = True
             self.memory.extensions["execution_error"] = type(error).__name__
             self._publish()
+            self.memory.enforce_budgets()
 
     def check(self):
         check_cancelled(self.abort)
@@ -86,6 +87,7 @@ class ExecutionState:
             self.memory.tool_results.append(copy.deepcopy(result))
             self.calls[call.id]["status"] = "succeeded" if "result" in result else "denied"
             self._publish()
+            self.memory.enforce_budgets()
 
 
 class Dispatch:

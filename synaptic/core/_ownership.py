@@ -6,6 +6,9 @@ import inspect
 from contextlib import contextmanager
 from functools import wraps
 from uuid import uuid4
+from typing import Any, Callable, TypeVar, cast
+
+F = TypeVar("F", bound=Callable[..., Any])
 from ..logging import _bus
 
 
@@ -31,7 +34,9 @@ def operation(model, history=None):
                     continue
                 active = getattr(obj, "_operation_owner", None)
                 if active is not None and active != owner:
-                    raise RuntimeError("Concurrent model/history use requires separate instances")
+                    raise RuntimeError(
+                        "Concurrent model/history use requires separate instances"
+                    )
                 if active is None:
                     obj._operation_owner = owner
                     acquired.append(obj)
@@ -44,7 +49,7 @@ def operation(model, history=None):
                 obj._operation_owner = None
 
 
-def guarded(function):
+def guarded(function: F) -> F:
     @contextmanager
     def context(self):
         correlation = {"session_id": self.session.id} if hasattr(self, "session") else {}
@@ -67,7 +72,7 @@ def guarded(function):
                 finally:
                     await source.aclose()
 
-        return stream_wrapper
+        return cast(F, stream_wrapper)
     if asyncio.iscoroutinefunction(function):
 
         @wraps(function)
@@ -75,11 +80,11 @@ def guarded(function):
             with context(self):
                 return await function(self, *args, **kwargs)
 
-        return async_wrapper
+        return cast(F, async_wrapper)
 
     @wraps(function)
     def wrapper(self, *args, **kwargs):
         with context(self):
             return function(self, *args, **kwargs)
 
-    return wrapper
+    return cast(F, wrapper)

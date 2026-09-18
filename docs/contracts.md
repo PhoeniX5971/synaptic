@@ -182,3 +182,54 @@ second begin. This permits truthful `not_started` reporting for cooperative queu
 opaque executor cancellation remains `uncertain`. Synaptic cannot stop external code
 that ignores the gate or prove that a remote request was not accepted. No durable
 exactly-once or process-crash recovery guarantee is made by this in-memory journal.
+
+## Integration ownership: attempts, context and recovery (T-011)
+
+`Retry(Model(...))` owns each eligible generation attempt and holds the Model history's
+operation guard through backoff. With autorun disabled, failures before any provider
+output are archived in `history.failed_attempts`, not normal conversation context.
+Each record retains incomplete/error metadata and `extensions.attempt_input` (prompt,
+role and media references). This archive also exists with automem disabled; automem
+controls conversation writes, not retry diagnostics. Repeated failures, cancellation
+and deadlines preserve these records. A successful retry adds only one normal exchange.
+
+A first provider chunk, even when collected internally by ainvoke, closes the replay
+window. Synchronous generation returning a response also closes it. Visible/partial
+output is not repeated; autorun effects remain non-retryable. Existing incomplete
+execution is still rejected before generation, regardless of retry policy. Retry never
+clears unrelated history or previous receipts. Generic retry targets retain their
+caller-responsible contract and do not acquire Model's attempt archive semantics.
+
+History separates three collections:
+
+- `entries`: the count/token-bounded context projection submitted to providers.
+- `recovery`: independently retained tool exchanges and incomplete responses, including
+  entries dropped from context. Current-context exchanges share the same object here.
+- `failed_attempts`: invisible, effect-free failed Retry generation records.
+
+Framework receipt publication and external reconciliation enforce attached History
+budgets immediately. `effective_mems()` and Model's pre-provider check enforce them
+again, including after later object growth. Truncation removes whole entries (a call
+and its results remain one exchange). A single oversized exchange is omitted entirely
+from provider context with the existing truncation callback/warning. Its receipts remain
+in recovery. Unresolved recovery blocks continuation even when omitted from context;
+reconcile that response explicitly before proceeding. The token budget bounds only
+history under the supplied estimator, not instructions, the current prompt, provider
+framing, or total process memory. It is not a claim of measured provider token usage.
+
+Recovery and failed-attempt records are not automatically pruned by context budgets.
+Consumers own their persistence, retention/access policy and eventual disposal; deleting
+these records deliberately abandons that recovery evidence. Histories may contain
+sensitive prompt/tool data. Detached observer copies cannot enforce the original
+history's budget. New readers accept old history v1 records and add optional `recovery`
+and `failed_attempts` sections. Do not round-trip these records through older releases
+that do not preserve those sections. Counters/budget policies must still be reattached
+after restoration; archive objects and active entries are restored without stale aliases.
+
+Reconciliation validates all identities before changing receipts or outcomes. Mapping
+keys must match any embedded call_id; tagged lists must be entirely tagged, unique and
+match the complete proposed ID set. Mixed tagged/positional lists, missing/unexpected IDs,
+invalid IDs and contradictory mappings fail atomically. Untagged complete positional
+lists remain supported. Recorded partial results require explicit IDs; ambiguous legacy
+partial lists and malformed restored identities are rejected. Canonical identity follows
+the proposal set, so arbitrary embedded payload IDs cannot bypass receipt immutability.

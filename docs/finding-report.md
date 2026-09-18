@@ -55,7 +55,7 @@ The six initial regression cases failed before the fixes (S-004).
   from dependency ranges. Catalog bounds apply after SDK decoding, not before wire buffering.
 - Python 3.13.8 Linux is runtime-qualified; >=3.11 declares the language floor, not a test
   result for every interpreter/platform. T-010 supersedes the earlier typing limit: all
-  90 runtime-package files now pass the full-body gate; only Vertex/xAI SDK import typing
+  92 runtime-package files now pass the full-body gate; only Vertex/xAI SDK import typing
   remains unqualified. The latest suite/install evidence is in qualification.md.
 - Thread cancellation cannot undo effects; sync retry deadlines cannot preempt blocking code.
   Resource references are preserved in history but unsupported for provider submission.
@@ -63,4 +63,4 @@ The six initial regression cases failed before the fixes (S-004).
   packaging and PC resource scheduling remain outside the framework as requested.
 
 The subsequent Control review is resolved in [readiness-followup.md](readiness-followup.md).
-The current full suite passes 302 tests; original F IDs and their evidence are preserved.
+The latest integration full suite passes 360 tests; original F IDs and their evidence are preserved.

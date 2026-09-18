@@ -80,3 +80,19 @@ and disabled incremental cache for all package files. Fix project-owned errors i
 excluding modules or skipping owned imports. Pin types-jsonschema; narrowly permit the
 untyped Vertex/xAI SDK import namespaces. Windows, other Python/MCP/provider versions and
 live services require fresh executable qualification before expanding support claims.
+
+## D-011 — 2026-09-18: separate bounded context from recovery and attempts
+
+Archive only invisible, effect-free Retry attempts independently of conversation history;
+never clear unrelated incomplete records to permit retry. Hold history ownership across
+backoff and preserve output/effect barriers. Retain tool/incomplete exchanges independently
+of context trimming, enforce budgets after framework mutations and before submission,
+and reject unresolved recovery even after context removal. Consumers own archive retention.
+
+## D-012 — 2026-09-18: identity validation and installed qualification
+
+Validate reconciliation keys/embedded IDs and canonical known receipts before mutation.
+Reject mixed/ambiguous formats; retain complete untagged legacy lists. Package inline
+metadata and test actual installed public types, including core-only environments, with
+positive and negative examples. CI runs the frozen baseline and never publishes. Remote
+CI, additional platforms and a verified private security route remain separate release gates.

@@ -11,6 +11,7 @@ Scope: [original brief](hardening-brief.md), [follow-up](followup-brief.md).
 | M-004 | Isolation/retry/logging/history/outcomes | done | T-008/T-009; cancellation/privacy/history tests |
 | M-005 | Packaging and qualification | done | T-009; lock, ten clean-install cases, 238-test suite |
 | M-006 | Control readiness follow-up | done | T-010; 302 tests, 90 typed files, ten final wheel installs |
+| M-007 | Integration and installed release gates | implemented; release prerequisites open | T-011; 360 tests, 92 typed files, installed positive/negative typing, ten installs; private reporting route/remote CI await maintainer |
 
 Full-package typing is now a reproducible gate. Implementation completion does not
 imply live-provider, Windows or every-version qualification. Exact evidence and limits are in qualification.md.

@@ -219,3 +219,59 @@ Windows/macOS, other interpreter/SDK versions, remote CI, live services and scal
 qualification. A running thread/opaque remote effect can outlive cancellation; this is not
 a durable exactly-once journal. These limits are explicit, with no accepted implementation
 item hidden as future work. Next: consumer integration qualification; only the user publishes.
+
+## S-009 — 2026-09-18 — public integration and installed release gates (T-011)
+
+Agent: Codex. Reviewed Control's docs/synaptic-integration-review.md read-only against
+clean `3eb9956d9d9441dedf977c2a6ee76696e1ab42c9`. Preserved the 302-test suite, full-package
+typing and earlier execution/lifecycle fixes. Four public-API reproductions failed before
+implementation: Model+Retry+automem in two modes, budget growth, contradictory IDs.
+
+Added context-local generation-attempt ownership for Retry, independent failed-attempt
+retention and ownership through backoff. Output/effect barriers remain intact and prior
+unresolved recovery still prevents provider entry. History now separates provider context
+from recovery receipts, enforces budgets after result growth/reconciliation and immediately
+before provider entry, and serializes independent recovery/attempt evidence. Oversized
+exchanges leave context as whole entries; unresolved recovery cannot be hidden by trimming.
+Reconciliation validates all supported formats/identities before mutation, including
+restored records. Contradictory mapping keys and mixed/ambiguous formats are rejected.
+
+Published py.typed in wheel/sdist; preserved decorator signatures, explicit exports and
+public return annotations. The downstream harness runs strict mypy outside the checkout
+against isolated wheel environments, accepting valid types and rejecting each of 12 invalid
+lines. Core-only targets require no SDKs or development dependencies. An initial harness
+run correctly produced errors but expected absolute diagnostic paths; it was fixed to
+recognize relative filenames without suppressing any diagnostics. Signature preservation
+exposed two inherited ModelAPI override mismatches; their required-prompt contracts were
+corrected and full typing passed. All original tests remain unchanged. Final review also added canonical ordering of
+restored tagged receipts before provider projection, with its own public regression;
+the complete quality/release gates were repeated against that final runtime.
+
+Tracked pinned/read-only GitHub CI now invokes the same frozen quality and release scripts.
+Added contribution, security reporting, version/deprecation/release guidance, changelog and
+an installed credential-free offline example. The maintainer was asked for a private
+security-reporting route; no response/route has been assumed. SECURITY.md explicitly makes
+route verification a public-release prerequisite. No email/channel/SLA is invented.
+
+Final checks in freshly created /tmp/synaptic-integration-env from frozen uv.lock:
+
+- `python scripts/check_quality.py`: fatal Ruff passed, mypy **zero errors in 92 runtime
+  files**, pytest **360 passed, four warnings** with RuntimeWarning as an error. Warnings
+  remain two expected history truncations and two upstream Vertex/protobuf deprecations.
+- `python scripts/check_release.py`: wheel/sdist built with py.typed; **all ten isolated
+  install cases passed** including uv pip check. Core/OpenAI/all each accepted valid
+  public typing, rejected all 12 invalid lines and passed the installed offline example.
+- Added **58 public integration regressions** covering automem on/off, modes, retry
+  failures/deadlines/cancellation/backoff ownership, partial output/effects, growing
+  built-in/external results, overflow, restored recovery and reconciliation formats.
+- Lock consistency, whitespace and changed runtime source <=200-line checks passed.
+  Build/install downloads and local subprocess/loopback/thread fixtures used normal local
+  permissions. No live providers, credentials, desktop effects or publication were used.
+
+Support remains Linux x86_64 CPython 3.13.8 and exact SDK/protocol fixtures. CI configuration
+is not a remote-run result; the Ubuntu hosted image is not claimed separately qualified.
+Recovery/attempt archives are not context-budget limited and require consumer retention
+policy; older readers must not round-trip the new v1 fields. Durability, grants and remote
+idempotency remain application responsibilities. Updated contracts, rationale, architecture,
+decisions D-011/012, migration, qualification, known issues and portable handoff. Next:
+maintainer reporting-route decision and eventual remote CI/release qualification.

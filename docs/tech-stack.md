@@ -21,3 +21,7 @@ The development typing gate is mypy 1.19.1 plus types-jsonschema 4.26.0.20260518
 configured in pyproject.toml and driven by scripts/check_quality.py. All runtime-package
 files and untyped bodies are checked; only the Vertex/xAI SDK import metadata limitations
 are exempt. Windows and macOS have not been qualified; the install harness is POSIX.
+
+Inline typing is published with py.typed in wheel/sdist. Installed consumer contracts are
+checked independently in core-only and selected extra environments. The tracked Linux
+CI baseline uses CPython 3.13.8 and uv 0.12.10; remote execution remains unverified.

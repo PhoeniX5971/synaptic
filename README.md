@@ -97,3 +97,11 @@ surface needed to use Synaptic without prior knowledge.
 ## License
 
 GNU General Public License v3.0. See the repository license for details.
+
+## Contributing and release status
+
+See [CONTRIBUTING](CONTRIBUTING.md), [security reporting](SECURITY.md),
+[release guidance](docs/releasing.md) and [changelog](CHANGELOG.md). The
+[tracked qualification workflow](.github/workflows/qualification.yml) runs the frozen
+gates; no remote run is claimed by the local qualification record. Try the credential-free
+[offline example](examples/offline.py) for tools and serialized recovery receipts.

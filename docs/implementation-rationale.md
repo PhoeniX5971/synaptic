@@ -184,3 +184,45 @@ Optional function-call names are validated. Stale ignores were removed. The full
 checks untyped bodies with normal imports and no incremental cache. Only Vertex/xAI
 imports lack typing metadata; JSON Schema uses pinned stubs. This is a package-wide
 baseline gate, not a claim of strict annotation coverage or typed third-party internals.
+
+## T-011 — feature integration and installed contracts
+
+`core/_attempt.py` provides a context-local Model generation scope used only by Retry
+when effects are disabled. Runners announce generation entry and output; invisible
+failed records go to failed_attempts while partial-output records keep the existing
+recovery barrier. Retry's classification closure observes the output boundary without
+replacing or mutating native exceptions. The operation guard spans backoff so another
+caller cannot interleave changes to the same history. Blanket removal of incomplete
+history was rejected: it would erase earlier receipts or permit uncertain effects.
+
+History's context window and recovery collection serve different lifetimes. `_retain`
+registers tool/incomplete memories independently of provider context. Memory keeps weak
+references to owning histories so incremental receipts and public reconciliation can
+recheck budgets even when no History argument is passed. Detached copies clear those
+bindings. Rechecking before provider entry covers later growth. Oversized exchanges are
+excluded as whole entries and reported through the existing truncation policy; recovery
+is retained. The pre-provider guard examines both context and recovery, so truncation
+cannot hide an unresolved effect. This is bounded context, not bounded durable storage.
+
+`base/_results.py` validates the entire result set before mutation. Mapping keys and
+embedded IDs must agree; tagged lists cannot silently degrade to positional mode.
+Canonical indexing also validates existing/restored receipts before immutability checks.
+The serializer stores out-of-context recovery separately and reuses active entries on
+restore, avoiding two divergent copies of the same pending exchange. Optional v1 fields
+keep new-reader compatibility; older readers must not be used to round-trip the new data.
+
+`py.typed` publishes inline types. The ownership decorator preserves the original callable
+signature using a type variable and casts only its internal wrapper; consumer examples
+need no casts or ignores. Public Model stream/proposal returns and explicit root exports
+retain their types. `check_consumer_types.py` runs strict mypy outside the checkout using
+an isolated wheel environment for package discovery: valid assert_type examples and each
+of 12 invalid API lines are required to behave correctly. Core-only target environments
+contain neither SDKs nor development stubs; mypy runs from the qualified development host.
+This tests useful public contracts, not complete typing of dynamic SDK payloads.
+
+Tracked CI runs the same frozen local quality and release scripts, with pinned action
+commits, read-only permissions and no publish step. The release script checks both
+artifact markers, ten install combinations, downstream types and an installed offline
+example. Configuring this workflow is distinct from a successful remote run. Security
+reporting remains a maintainer-designated release prerequisite until a private route is
+approved; no inferred email address or enabled advisory setting is used.

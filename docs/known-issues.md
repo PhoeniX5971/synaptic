@@ -6,9 +6,10 @@ are resolved by test_followup, test_mcp_dispatch, test_hub_contract and
 test_invocation_contract. Historical BUG-020 (stale ignored tests) remains resolved.
 
 Control BUG-010/011 are resolved by the execution recovery/boundary/reconciliation suites;
-see readiness-followup.md. Remaining qualification limits:
+see readiness-followup.md. Control BUG-012–015 integration/distribution fixes are mapped
+in integration-followup.md. Remaining qualification limits:
 
-- **Typing boundary:** full-package mypy passes all 90 source files, with untyped bodies
+- **Typing boundary:** full-package mypy passes all 92 source files, with untyped bodies
   checked and no incremental cache. Pinned Vertex/xAI SDK imports lack typing metadata;
   only those namespaces have missing-import overrides. Dynamic SDK payloads are not claimed
   as strictly typed. The prior 81-error report is superseded by T-010.
@@ -25,10 +26,15 @@ see readiness-followup.md. Remaining qualification limits:
   erase a receipt. No automatic effect replay or durable exactly-once guarantee.
 - **Bounds:** discovery/media limits reject after decoding/reading up to their documented
   limits. They are not a hostile-network frame sandbox. Idle hub eviction runs on access.
+- **History retention:** context budgets do not bound recovery/failed-attempt archives or
+  total request tokens. Consumers own archive retention and persistence. Older readers
+  must not round-trip the new optional history v1 sections.
+- **Release prerequisites:** tracked CI has not run remotely. A maintainer-approved private
+  vulnerability reporting route is still required before public release; see SECURITY.md.
 - **History:** dedup_tools is opt-in lossy compaction; identical calls do not establish stable
   external state. Serializable results/extensions must be JSON-compatible. Resource references
   are preserved but currently rejected for provider submission.
 
-No remaining implementation task from the accepted hardening briefs is represented as a
-planned prerequisite. Live-service qualification, strict annotation expansion and additional platform
+Runtime integration and installed-distribution fixes are implemented. The private reporting
+route remains an explicit maintainer decision; no supported reporting contact is invented. Live-service qualification, strict annotation expansion and additional platform
 coverage are future release work, with no credentials/network authorization inferred here.

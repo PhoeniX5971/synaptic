@@ -1,12 +1,14 @@
 import copy
 import json
 import warnings
+from weakref import WeakSet
 from typing import Callable, Dict, List, Optional
 
 from ..tool import ToolCall
 from .content import ContentBlock
 from .._metadata import finish_reason as normalize_finish
 from . import _history_io
+from ._results import ResultInput, indexed_results
 
 
 class Memory:
@@ -17,6 +19,23 @@ class Memory:
         self.created = created
         self.role = role
         self.content = tuple(content or ())
+        self._histories: WeakSet[History] = WeakSet()
+
+    def enforce_budgets(self) -> None:
+        for history in list(self._histories):
+            history._retain(self)
+            history.enforce_budget()
+
+    def __deepcopy__(self, memo):
+        duplicate = type(self).__new__(type(self))
+        memo[id(self)] = duplicate
+        duplicate.__dict__ = {
+            key: copy.deepcopy(value, memo)
+            for key, value in self.__dict__.items()
+            if key != "_histories"
+        }
+        duplicate._histories = WeakSet()
+        return duplicate
 
     def __repr__(self):
         return f"<Memory role={self.role} message={self.message!r}>"
@@ -78,18 +97,12 @@ from .history import History
 
 def complete_tool_call(
     mem: ResponseMem,
-    results: List,
+    results: ResultInput,
     history: Optional[History] = None,
 ) -> None:
     """Set tool results and optionally ensure the response is in history."""
     correlated = _history_io.correlate(mem, results)
-    known = {}
-    for index, item in enumerate(mem.tool_results):
-        call_id = item.get("call_id") if isinstance(item, dict) else None
-        if call_id is None and len(mem.tool_results) == len(mem.tool_calls):
-            call_id = mem.tool_calls[index].id
-        if call_id is not None:
-            known[call_id] = item
+    known = indexed_results(mem, mem.tool_results, complete=False)
     for call, item in zip(mem.tool_calls, correlated):
         if call.id in known and known[call.id] != item:
             raise ValueError("Cannot replace an already recorded tool result")
@@ -103,3 +116,4 @@ def complete_tool_call(
     mem.extensions.pop("incomplete", None)
     if history is not None and mem not in history.entries:
         history.add(mem)
+    mem.enforce_budgets()

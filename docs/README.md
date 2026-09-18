@@ -44,3 +44,7 @@ the [retry policy](retry-policy.md), and the accepted [follow-up brief](followup
 portable handoff; `progress-log.md` is append-only implementation evidence.
 
 Control readiness findings and their resolution: [readiness follow-up](readiness-followup.md).
+
+The current [integration follow-up](integration-followup.md) supplements previous reviews.
+Contributor/release entry points: [CONTRIBUTING](../CONTRIBUTING.md),
+[SECURITY](../SECURITY.md), [release discipline](releasing.md), [CHANGELOG](../CHANGELOG.md).

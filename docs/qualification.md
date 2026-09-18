@@ -1,15 +1,15 @@
-# Qualification — Control readiness follow-up (T-010)
+# Qualification — Control integration follow-up (T-011)
 
-Measured 2026-09-16 after reviewing Control against Synaptic baseline
-`cac43ac2c5184926b4e1b89c924e76346e961969`. This record supersedes S-007's typing
-limitation. Earlier commands/results remain in progress-log.md; the original findings
-remain in finding-report.md and the new review is mapped in readiness-followup.md.
+Measured 2026-09-18 against the integration follow-up to clean baseline
+`3eb9956d9d9441dedf977c2a6ee76696e1ab42c9`. S-008 preserves the prior 302-test/90-file
+qualification. This review is mapped in integration-followup.md; older findings and
+commands remain in finding-report.md, readiness-followup.md and progress-log.md.
 
 ## Measured compatibility
 
 | Component | Version / result |
 | --- | --- |
-| Runtime | CPython 3.13.8, Linux x86_64; 302 tests passed in a fresh uv.lock environment |
+| Runtime | CPython 3.13.8, Linux x86_64; 360 tests passed in a fresh uv.lock environment |
 | MCP SDK / protocol | 1.30.0 / 2025-11-25; real subprocess stdio and loopback Streamable HTTP |
 | HTTP foundations | httpx 0.28.1, anyio 4.12.1, uvicorn 0.52.4, Starlette 1.6.0 |
 | Schema | Pydantic 2.12.5, jsonschema 4.26.0 |
@@ -40,29 +40,33 @@ Reviewed primary references and installed signatures:
 
 ## Regression evidence and reproducible full gate
 
-- Historical gates: 176 original baseline tests, then 238 tests in S-007.
+- Historical gates: 176 original baseline tests, 238 tests in S-007, 302 tests in S-008.
+- Four public Model/Retry/budget/reconciliation integration cases failed before this fix.
+  The final suite adds 58 public integration cases and preserves all earlier tests.
 - Control's two execution failures were reproduced in five cases before the fix:
   `pytest tests/test_execution_recovery.py -q --tb=short` → **five failures**.
-- Current final full gate: **302 passed, four warnings**: two expected history
+- Current final full gate: **360 passed, four warnings**: two expected history
   truncations and two upstream Vertex/protobuf deprecations. RuntimeWarning is an error.
 - This includes the original lifecycle/ownership/provider suites and three real MCP
   transport tests, plus sync/async/stream/external executor receipt and cancellation
   coverage, observers, output validation, scheduler queues and serialized reconciliation.
+  New tests combine real public Model/Agent/Retry APIs with in-process adapter fixtures,
+  avoiding live services and internal-runner-only evidence.
 
 Reproduce with uv 0.12.10 and CPython 3.13.8 from the repository root:
 
 ```sh
-UV_CACHE_DIR=/tmp/synaptic-uv-cache UV_PROJECT_ENVIRONMENT=/tmp/synaptic-readiness-env uv sync --frozen --all-extras --python 3.13.8
-/tmp/synaptic-readiness-env/bin/python scripts/check_quality.py
+UV_CACHE_DIR=/tmp/synaptic-uv-cache UV_PROJECT_ENVIRONMENT=/tmp/synaptic-integration-env uv sync --frozen --all-extras --python 3.13.8
+/tmp/synaptic-integration-env/bin/python scripts/check_quality.py
 ```
 
-The gate prints measured interpreter/tool versions, runs fatal Ruff, checks **all 90
+The gate prints measured interpreter/tool versions, runs fatal Ruff, checks **all 92
 runtime-package source files** with mypy and then runs the full test suite. Mypy uses
 `--config-file pyproject.toml --no-incremental synaptic`, normal import following and
 `check_untyped_defs=true`; no project module is excluded or followed with skip. Tests
 and scripts receive fatal lint and execution checks; they are not claimed as strictly
-type-annotated. Fresh pre-fix full-body analysis found **132 errors in 28 of 88 files**;
-current analysis reports **zero errors in 90 files**. The older 81-error/ten-module
+type-annotated. T-010's historic pre-fix full-body analysis found **132 errors in 28 of 88 files**;
+current analysis reports **zero errors in 92 files**. The older 81-error/ten-module
 reports used a different gate and are preserved only as historical measurements.
 
 Local stdio/socket/thread wakeup fixtures need ordinary local permissions. Earlier
@@ -78,21 +82,40 @@ selected provider imports and `uv pip check`. Core had no OpenAI distribution, a
 requesting its adapter returned the actionable missing-extra error. The final wheel was
 checked independently of the source checkout using isolated Python (`-I`).
 
-Reproduce from a checkout with uv 0.12.10:
+Reproduce with the same fresh development interpreter:
 
 ```sh
-uv lock --check
-uv build --out-dir /tmp/synaptic-dist
-uv export --frozen --all-extras --no-emit-project --format requirements-txt --output-file /tmp/synaptic-constraints.txt
-python scripts/check_installs.py /tmp/synaptic-dist/synaptic-0.1.0-py3-none-any.whl --constraints /tmp/synaptic-constraints.txt
+/tmp/synaptic-integration-env/bin/python scripts/check_release.py
 ```
 
-Dependency downloads required network permission after sandbox DNS failures. An initial
-final-wheel install attempt failed because its old temporary constraint export no longer
-existed; a fresh export was generated and every final-wheel case passed. Build output
-and temporary environments live outside the repository; no artifacts/credentials are committed.
-`uv.lock` pins the complete development resolution; no claim is made that an unpinned
-consumer resolves identical transitive dependencies.
+This passed against the final runtime: wheel and sdist both include `synaptic/py.typed`;
+all ten isolated install cases passed. Core, OpenAI and all-extras targets also ran strict
+mypy from outside the checkout using the target Python for package discovery. Positive
+assert_type examples passed for Model/Agent sync/async/streaming, proposal return types,
+history and core records. **All 12 intentionally invalid API lines were rejected in
+each of the three targets**. Consumer config contains no ignores, Any casts or optional
+SDK workarounds. Core-only targets contain no provider SDKs or development dependencies;
+the checker is supplied by the qualified development host. The first harness run expected
+absolute filenames; mypy's relative diagnostics were correctly recognized on rerun.
+
+The credential-free offline example ran with isolated Python (`-I`) against those three
+installed wheels. `uv pip check` passed for every install. The release script builds in
+a temporary directory, verifies artifact contents, exports the frozen constraints and
+never publishes. Dependencies/build tools may be downloaded; no provider requests or
+credentials are used. No unpinned-consumer equivalence is claimed.
+
+## Tracked automation and release prerequisites
+
+`.github/workflows/qualification.yml` runs the frozen quality and release scripts with
+Ubuntu 24.04, CPython 3.13.8 and uv 0.12.10. Action tags were resolved against official
+repositories and pinned to immutable commits. Permissions are read-only and there is no
+publish step. The scripts passed locally; **no remote CI run is claimed**. The configured
+Ubuntu runner image has not been separately qualified by a remote execution.
+
+CONTRIBUTING.md, SECURITY.md, CHANGELOG.md and docs/releasing.md link the existing records.
+A private vulnerability reporting route has not been designated/verified by the maintainer;
+SECURITY.md records that prerequisite without inventing a contact. Only the maintainer
+chooses versions, tags, reporting settings and publication.
 
 ## Typing boundaries and implementation limits
 
@@ -113,7 +136,10 @@ Discovery byte limits apply after SDK decoding. Idle eviction occurs on next use
 Cancelling an already-running thread or opaque external executor cannot stop/prove absence
 of effects; it remains uncertain. Not-yet-admitted cooperative work rechecks cancellation.
 Earlier receipts survive both failure and cancellation; reconciliation cannot replace them.
-The execution extension is in-memory evidence, not crash-proof durable exactly-once storage.
+Recovery and failed-attempt archives are independently retained and are not automatically
+pruned by context budgets. The budget bounds the supplied history estimator, not total
+request tokens or archive memory. The execution extension is in-memory evidence, not
+crash-proof durable exactly-once storage.
 Serialization requires JSON-compatible results and application-supplied token counters.
 Diagnostics can report/drop events and are not a reliable journal. These boundaries are
 specified in contracts.md, not hidden as future fixes.

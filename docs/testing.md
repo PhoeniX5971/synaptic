@@ -5,9 +5,10 @@ Use the reproducible environment:
 ```sh
 uv sync --frozen --all-extras --python 3.13.8
 uv run --frozen --all-extras python scripts/check_quality.py
+uv run --frozen --all-extras python scripts/check_release.py
 ```
 
-The gate passes all 90 runtime-package files in mypy and 302 tests on Python 3.13.8 Linux. Tests use asyncio.run; no
+The gate passes all 92 runtime-package files in mypy and 360 tests on Python 3.13.8 Linux. Tests use asyncio.run; no
 pytest-asyncio plugin is required. Provider fixtures use installed SDK types or
 httpx.MockTransport, not live credentials. Manual demos under examples/live are never
 collected. Do not read .env or contact providers for deterministic checks.
@@ -34,3 +35,10 @@ from missing-import diagnostics; no Synaptic module is excluded. See qualificati
 for exact limitations and the fresh-environment command. Windows and alternative Python
 versions require their own complete gate/transport/install qualification before support
 claims. Source fixtures do not establish live service or scale guarantees.
+
+The release script verifies py.typed in both wheel and sdist, all ten isolated installs,
+strict valid/invalid consumer typing in core/OpenAI/all target environments, and the
+installed offline example. It must run under the frozen development Python that supplies
+mypy; the target core-only install itself needs neither development tools nor SDKs.
+The tracked qualification workflow invokes these same scripts. See releasing.md for the
+separate remote-run and maintainer prerequisites; local tests do not publish anything.

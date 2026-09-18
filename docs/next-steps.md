@@ -1,30 +1,32 @@
 # Handoff / next steps
 
-T-010 / M-006 resolves Control's readiness review against `cac43ac`. Read
-[readiness-followup.md](readiness-followup.md), [contracts.md](contracts.md) and
-[qualification.md](qualification.md) before changing execution or support claims.
-Canonical progress is S-008; previous entries and raw local logs remain preserved.
+T-011 addresses Control's integration review against `3eb9956`. Read
+[integration-followup](integration-followup.md), [contracts](contracts.md),
+[migration](migration.md) and [qualification](qualification.md). S-009 preserves this
+session's before/after evidence; prior fixes and historical logs remain intact.
 
-The current gate passes **302 tests**, fatal Ruff and **all 90 runtime source files**
-in mypy. The final wheel/sdist were rebuilt, and all **ten isolated install cases**
-passed after the final receipt guard. Use the frozen all-extras environment:
+Fresh frozen validation: **360 tests**, **92 runtime files type-clean**, fatal Ruff,
+**ten isolated wheel installs**, py.typed in wheel/sdist, and strict installed-consumer
+checks in core/OpenAI/all targets (valid examples accepted, all 12 invalid lines rejected).
+The offline example also passed in those three isolated installs.
 
 ```sh
 uv sync --frozen --all-extras --python 3.13.8
 uv run --frozen --all-extras python scripts/check_quality.py
+uv run --frozen --all-extras python scripts/check_release.py
 ```
 
-The next release action is consumer integration validation using the documented
-partial-result/reconciliation contract. Do not replay succeeded or uncertain calls;
-acknowledge incomplete exchanges explicitly, retaining receipts unchanged. Local
-transport/thread fixtures require normal local permissions, without live provider calls.
-The gate and scripts/check_installs.py are the reproducible release checks.
+Immediate maintainer decision: designate and verify the private vulnerability-reporting
+route, then update SECURITY.md and releasing.md. No reporting contact/channel is currently
+claimed. The tracked qualification workflow is configured but has not run remotely;
+only the maintainer publishes the branch, confirms that run and makes release decisions.
 
-Qualification remains Linux x86_64 / CPython 3.13.8, MCP 1.30.0 / protocol 2025-11-25,
-and the pinned provider SDK fixtures. Windows/macOS, other Python/SDK versions, remote
-CI, live providers and scale remain unqualified. Vertex/xAI SDK import types are narrowly
-exempt because their pinned distributions lack typing metadata. Blocking threads and
-opaque remote effects may outlive cancellation; durable reconciliation is consumer-owned.
+Retry owns only invisible effect-free attempts. Recovery receipts and unresolved records
+survive context trimming/serialization; archives are consumer-retained and not bounded by
+the context budget. Reconcile complete exchanges without replacing known receipts. New
+history v1 fields must not be round-tripped through older readers that drop them.
 
-No accepted readiness implementation remains deferred. Only the user publishes. Do not
-modify remotes/history, read credentials or edit sibling projects without new instruction.
+Measured support stays Linux x86_64 / CPython 3.13.8, MCP 1.30.0 / protocol 2025-11-25,
+and pinned SDK fixtures. No Windows/macOS, alternate-runtime/SDK, live service or scale
+qualification is implied. Blocking effects can outlive cancellation; durability and grants
+remain consumer-owned. Do not publish, rewrite history, read credentials or edit siblings.
