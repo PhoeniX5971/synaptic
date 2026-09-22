@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.pyo
+*.pyd
+
+# Build
+build/
+dist/
+
+# Virtual env
+.venv/
+env/
+
+# .env
+.env
+
+# Test/tool caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Machine-specific agent support (tracked instructions stay tracked)
+.claude/hooks/
+.claude/settings.json
+.claude/skills/
+
+# Claude Code session logs (auto-generated)
+logs/
+
+# Private local documentation and agent records
+docs/
+memory/
+.claude/
+.codex/
+.agents/
+*.md
+*.MD
+!README.md
