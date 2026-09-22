@@ -275,3 +275,34 @@ policy; older readers must not round-trip the new v1 fields. Durability, grants 
 idempotency remain application responsibilities. Updated contracts, rationale, architecture,
 decisions D-011/012, migration, qualification, known issues and portable handoff. Next:
 maintainer reporting-route decision and eventual remote CI/release qualification.
+
+
+## S-010 — 2026-09-22 — Code-only cloud backup
+
+Agent: Codex. The user authorized a push to the existing repository, then explicitly
+excluded skill-generated architecture, agent instructions and handoff documentation.
+Local main was clean at 20fbe06 and eight commits ahead of origin/main. Those commits
+contain private records, so pushing main or deleting only their current copies would
+expose the records through ancestry. No existing history was rewritten.
+
+Exported tracked source, tests, scripts, examples, CI, license, build configuration
+and lockfile to a separate temporary repository. Excluded all documentation and agent
+record directories and Markdown; generated only a minimal package README. Added
+backup ignore patterns for private records. Runtime, tests and build configuration
+were verified byte-identical to 20fbe06. Created a parentless commit with the user's
+author/committer identity: bbd84fbbfb64835d0acb16b07c45d2d7812e9008. Pushed only that
+commit to origin branch backup/code-only-2026-09-22. No tags or local main history
+were pushed; the remote's existing main still contains previously published records.
+
+Validation: fatal Ruff passed, mypy passed for 92 runtime files, and all 360 tests
+passed with the same four known warnings on CPython 3.13.8 / Linux. Sandboxed tests
+stalled at local transport fixtures and were interrupted; the complete pytest run
+passed with normal local permissions. Wheel and sdist builds passed, and the staged
+paths/distributions were audited for excluded private documents; py.typed was retained.
+The default build cache was read-only, so the build used a temporary cache. Setuptools
+warned about the existing license-table deprecation. No runtime changes, fresh isolated
+install matrix or remote CI result are claimed for this backup task.
+
+Next: preserve the private/public history boundary for every future backup. The
+private local records remain intact. New-repository migration and any cleanup of
+previously published history remain separate, unperformed work.

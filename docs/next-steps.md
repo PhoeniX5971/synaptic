@@ -1,5 +1,13 @@
 # Handoff / next steps
 
+Publication boundary (2026-09-22): the user explicitly requires private architecture,
+agent instructions and handoff records to stay local. Do not push this local `main`
+or merge its history into a public branch: its ancestors contain those records.
+A parentless code-only snapshot of `20fbe06` is backed up on origin branch
+`backup/code-only-2026-09-22` at `bbd84fbbfb64835d0acb16b07c45d2d7812e9008`.
+Future backups must also exclude private records and their ancestry. Existing remote
+history predates this boundary and still contains older documentation.
+
 T-011 addresses Control's integration review against `3eb9956`. Read
 [integration-followup](integration-followup.md), [contracts](contracts.md),
 [migration](migration.md) and [qualification](qualification.md). S-009 preserves this
