@@ -93,3 +93,10 @@ Tool definitions are immutable snapshots. Defaults merge and arguments validate 
 Agent permission checks. Callers may override defaults; policy sees the effective values.
 Model autorun result records retain the shown shape; Agent records also include call_id.
 See [contracts](../contracts.md) for Executor injection and [migration](../migration.md).
+
+## Non-ASCII arguments and results
+
+Tool arguments, tool results and structured output are serialized for providers with
+non-ASCII text kept literal (`ensure_ascii=False`), so Arabic and other non-Latin text
+is not expanded into `\uXXXX` escapes. Call `synaptic.set_ensure_ascii(True)` once at
+startup only if an endpoint requires ASCII-only JSON text.

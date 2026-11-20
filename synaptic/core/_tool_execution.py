@@ -1,5 +1,7 @@
 """One-shot dispatch, publishing every receipt before admitting another effect."""
 
+import time
+
 from .tool import ToolCall
 from .invocation import LocalExecutor
 from .base.memory import ResponseMem
@@ -23,19 +25,21 @@ def run_tools_sync(tools, blacklist, tool_calls, executor=None, memory=None, abo
     with ExecutionState(mem, abort) as state:
         state.check()
         for call in tool_calls:
-            result = {"name": call.name, "call_id": call.id}
+            result, ms = {"name": call.name, "call_id": call.id}, None
             try:
                 invocation = _prepare(tools, blacklist, call, state)
                 if invocation is None:
                     result["error"] = "Tool not registered or blacklisted"
                 else:
                     admit(executor, invocation)
+                    start = time.monotonic()
                     result["result"] = executor.execute(invocation)
+                    ms = int((time.monotonic() - start) * 1000)
             except Exception as error:
                 if not legacy:
                     raise
                 result["error"] = str(error)
-            state.record(call, result)
+            state.record(call, result, ms)
             state.check()
     return (
         [{k: v for k, v in item.items() if k != "call_id"} for item in mem.tool_results]
@@ -51,19 +55,21 @@ async def run_tools_async(tools, blacklist, tool_calls, executor=None, memory=No
     with ExecutionState(mem, abort) as state:
         state.check()
         for call in tool_calls:
-            result = {"name": call.name, "call_id": call.id}
+            result, ms = {"name": call.name, "call_id": call.id}, None
             try:
                 invocation = _prepare(tools, blacklist, call, state)
                 if invocation is None:
                     result["error"] = "Tool not registered or blacklisted"
                 else:
                     admit(executor, invocation)
+                    start = time.monotonic()
                     result["result"] = await executor.aexecute(invocation)
+                    ms = int((time.monotonic() - start) * 1000)
             except Exception as error:
                 if not legacy:
                     raise
                 result["error"] = str(error)
-            state.record(call, result)
+            state.record(call, result, ms)
             state.check()
     return (
         [{k: v for k, v in item.items() if k != "call_id"} for item in mem.tool_results]

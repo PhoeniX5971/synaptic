@@ -2,6 +2,10 @@
 
 ## Unreleased — integration qualification
 
+- `tool_end`, `ToolCallResult`, the execution journal and `agent.tool` logs report
+  executor-only `latency_ms`; provider-visible receipts are unchanged.
+- Provider-bound JSON text keeps non-ASCII characters literal by default;
+  `synaptic.set_ensure_ascii(True)` restores escaping.
 - Safe Model generation retries retain failed-attempt evidence independently of context.
 - Context budgets are rechecked after result growth and before submission; recovery
   receipts survive truncation and serialization.

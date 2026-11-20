@@ -73,7 +73,7 @@ It raises if the same session is already running.
 
 ```python
 agent.on("tool_start", lambda call: print(call.name))
-agent.on("tool_end", lambda call, result: print(result))
+agent.on("tool_end", lambda call, result: print(result, result["latency_ms"]))
 agent.on("step_end", lambda response: print(response.message))
 ```
 

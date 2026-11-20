@@ -1,5 +1,5 @@
 import base64
-import json
+from ...core._json import dumps
 import mimetypes
 from io import BytesIO
 from pathlib import Path
@@ -48,7 +48,7 @@ def history_messages(history) -> List[chat_pb2.Message]:
                     id=call.id,
                     function=chat_pb2.FunctionCall(
                         name=call.name,
-                        arguments=json.dumps(call.args) if call.args else "{}",
+                        arguments=dumps(call.args) if call.args else "{}",
                     ),
                 )
                 for i, call in enumerate(memory.tool_calls)
@@ -62,7 +62,7 @@ def history_messages(history) -> List[chat_pb2.Message]:
             )
             for i, (_, result) in enumerate(zip(memory.tool_calls, memory.tool_results or [])):
                 value = (
-                    json.dumps(result.get("result", result.get("error", result)))
+                    dumps(result.get("result", result.get("error", result)))
                     if isinstance(result, dict)
                     else str(result)
                 )

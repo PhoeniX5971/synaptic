@@ -2,6 +2,7 @@
 
 import copy
 import inspect
+import time
 
 from ..core._awaitables import require_sync
 from ..logging import _bus
@@ -29,6 +30,20 @@ def permitted(agent, invocation):
 
 
 def execute(agent, call, state=None, abort=None):
+    return _timed(agent, call, state, abort)[0]
+
+
+def _ms(start):
+    return int((time.monotonic() - start) * 1000)
+
+
+def _observed(result, latency_ms):
+    """Observer copy of a receipt; timing never enters history or provider requests."""
+    return {**copy.deepcopy(result), "latency_ms": latency_ms}
+
+
+def _timed(agent, call, state=None, abort=None):
+    """Return the receipt and executor-only latency; policy and observer time is excluded."""
     check_cancelled(abort)
     invocation = prepare(agent, call)
     if state:
@@ -38,18 +53,23 @@ def execute(agent, call, state=None, abort=None):
     allowed = require_sync(permitted(agent, invocation), "Async permission requires arun()")
     check_cancelled(abort)
     if not allowed:
-        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}
+        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0
     executor = getattr(agent, "executor", LocalExecutor())
     admit(executor, invocation)
+    start = time.monotonic()
     with _bus.current().scope(call_id=invocation.call_id):
         value = require_sync(
             executor.execute(invocation),
             "Async executor requires arun()",
         )
-    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}
+    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}, _ms(start)
 
 
 async def aexecute(agent, call, state=None, abort=None):
+    return (await _atimed(agent, call, state, abort))[0]
+
+
+async def _atimed(agent, call, state=None, abort=None):
     check_cancelled(abort)
     invocation = prepare(agent, call)
     if state:
@@ -61,12 +81,13 @@ async def aexecute(agent, call, state=None, abort=None):
         allowed = await allowed
     check_cancelled(abort)
     if not allowed:
-        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}
+        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0
     executor = getattr(agent, "executor", LocalExecutor())
     admit(executor, invocation)
+    start = time.monotonic()
     with _bus.current().scope(call_id=invocation.call_id):
         value = await executor.aexecute(invocation)
-    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}
+    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}, _ms(start)
 
 
 from typing import List, Any
@@ -86,10 +107,10 @@ class AgentExecution(AgentState):
                 self.events.emit("step_end", mem)
                 state.check()
             for call in calls:
-                result = execute(self, call, state, abort)
-                state.record(call, result)
-                self.events.emit("tool_end", copy.deepcopy(call), copy.deepcopy(result))
-                self._log_tool(call, result)
+                result, ms = _timed(self, call, state, abort)
+                state.record(call, result, ms)
+                self.events.emit("tool_end", copy.deepcopy(call), _observed(result, ms))
+                self._log_tool(call, result, ms)
                 state.check()
         return mem.tool_results
 
@@ -101,19 +122,19 @@ class AgentExecution(AgentState):
                 await self.events.aemit("step_end", mem)
                 state.check()
             for call in calls:
-                result = await aexecute(self, call, state, abort)
-                state.record(call, result)
-                await self.events.aemit("tool_end", copy.deepcopy(call), copy.deepcopy(result))
+                result, ms = await _atimed(self, call, state, abort)
+                state.record(call, result, ms)
+                await self.events.aemit("tool_end", copy.deepcopy(call), _observed(result, ms))
                 state.check()
                 if self.signals:
                     await self.signals.aemit(
-                        "ToolCallResult", _SignalTCR(call=call, result=result)
+                        "ToolCallResult", _SignalTCR(call=call, result=result, latency_ms=ms)
                     )
-                self._log_tool(call, result)
+                self._log_tool(call, result, ms)
                 state.check()
         return mem.tool_results
 
-    def _log_tool(self, call, result):
+    def _log_tool(self, call, result, latency_ms):
         _bus.emit(
             {
                 "type": "agent.tool",
@@ -121,5 +142,6 @@ class AgentExecution(AgentState):
                 "name": call.name,
                 "args": call.args,
                 "result": result,
+                "latency_ms": latency_ms,
             }
         )

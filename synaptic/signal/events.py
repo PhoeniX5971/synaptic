@@ -25,6 +25,7 @@ class ToolCallResult:
     call: ToolCall
     result: Any
     error: Optional[str] = None
+    latency_ms: Optional[int] = None
 
 
 @dataclass

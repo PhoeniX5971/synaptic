@@ -1,6 +1,6 @@
 """XAIRequest implementation separated by runtime responsibility."""
 
-import json
+from ...core._json import dumps
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -41,7 +41,7 @@ class XAIRequest(BaseModel):
         if schema:
             return chat_pb2.ResponseFormat(
                 format_type=chat_pb2.FormatType.FORMAT_TYPE_JSON_SCHEMA,
-                schema=json.dumps(schema),
+                schema=dumps(schema),
             )
         return chat_pb2.ResponseFormat(format_type=chat_pb2.FormatType.FORMAT_TYPE_JSON_OBJECT)
 

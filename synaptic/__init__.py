@@ -34,6 +34,7 @@ def __getattr__(name):
 from .core.base.content import ContentBlock
 
 from .core.capabilities import Capabilities, UnsupportedCapability
+from .core._json import set_ensure_ascii
 
 __all__ = [
     "Model",
@@ -57,6 +58,7 @@ __all__ = [
     "ContentBlock",
     "Capabilities",
     "UnsupportedCapability",
+    "set_ensure_ascii",
     "Executor",
     "Invocation",
     "LocalExecutor",

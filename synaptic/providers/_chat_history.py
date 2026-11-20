@@ -1,4 +1,4 @@
-import json
+from ..core._json import dumps
 from typing import Any, Dict, List
 
 from ..core.base import ResponseMem
@@ -9,11 +9,11 @@ from ._media import chat_content
 def result_text(result: Any) -> str:
     try:
         if hasattr(result, "model_dump"):
-            return json.dumps(result.model_dump())
+            return dumps(result.model_dump())
         if hasattr(result, "__dict__"):
-            return json.dumps(result.__dict__)
+            return dumps(result.__dict__)
         if isinstance(result, (dict, list)):
-            return json.dumps(result)
+            return dumps(result)
     except Exception:
         pass
     return str(result)
@@ -39,7 +39,7 @@ def history_messages(history, instructions: str, role_map: Dict[str, str]) -> Li
                     "type": "function",
                     "function": {
                         "name": call.name,
-                        "arguments": json.dumps(call.args) if call.args else "{}",
+                        "arguments": dumps(call.args) if call.args else "{}",
                     },
                 }
                 for i, call in enumerate(memory.tool_calls)

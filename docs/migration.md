@@ -139,3 +139,12 @@ See contracts.md before implementing a custom executor.
 Run scripts/check_quality.py and scripts/check_release.py under the frozen development
 Python. The install harness now invokes the development host's mypy against each selected
 isolated target, so run it with that host rather than a bare core-only Python interpreter.
+
+## Tool latency and literal non-ASCII JSON (T-012)
+
+- Provider-bound JSON text no longer escapes non-ASCII characters. Requests are still
+  valid JSON; consumers that compared or hashed the escaped text, or use an endpoint
+  that needs ASCII, call `synaptic.set_ensure_ascii(True)`.
+- Claude/xAI structured-output messages now contain literal non-ASCII characters.
+- `tool_end` result copies gain `latency_ms`; handlers that compare the whole dict to a
+  receipt must ignore that key. Execution journal entries may gain `latency_ms`.

@@ -60,5 +60,16 @@ Async handlers are supported by `aemit`, which `Agent.arun` uses.
 
 - `text_delta`: streamed text from `Agent.astream`.
 - `tool_start`: before a tool runs.
-- `tool_end`: after a tool result or error.
+- `tool_end`: after a tool result or error. The observer's `result` copy carries
+  `latency_ms`: executor time only, excluding policy and observer time (0 when denied).
 - `step_end`: after each model response in an agent loop.
+
+## Tool Latency
+
+```python
+agent.on("tool_end", lambda call, result: print(call.name, result["latency_ms"], "ms"))
+```
+
+The same value is journaled per call ID in `response.tool_outcomes[call_id]["latency_ms"]`
+(also for `Model(autorun=True)`), on the `ToolCallResult` signal and in the `agent.tool`
+log event. It is never added to `tool_results`, so it is not sent to the provider.

@@ -1,7 +1,7 @@
 """ClaudeStream implementation separated by runtime responsibility."""
 
 import asyncio
-import json
+from ...core._json import dumps
 from typing import AsyncIterator, List, Optional
 from ...core.base import ResponseChunk, ToolCallArgsDelta
 from ...core.tool import ToolCall
@@ -91,7 +91,7 @@ class ClaudeStream(BaseModel):
                     if active_tool_name is not None:
                         args = safe_json(active_tool_json)
                         if is_structured_output_block:
-                            json_str = json.dumps(args)
+                            json_str = dumps(args)
                             accumulated_message = json_str
                             yield ResponseChunk(
                                 text=json_str, is_final=False, function_call=None

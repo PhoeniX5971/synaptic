@@ -1,5 +1,5 @@
 from ._stream import ClaudeStream
-import json
+from ...core._json import dumps
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -127,7 +127,7 @@ class ClaudeAdapter(ClaudeStream, BaseModel):
                 message += block.text
             elif block.type == "tool_use":
                 if block.name == _STRUCTURED_OUTPUT_TOOL:
-                    message = json.dumps(block.input)
+                    message = dumps(block.input)
                 else:
                     tool_calls.append(
                         ToolCall(name=block.name, args=block.input or {}, id=block.id)

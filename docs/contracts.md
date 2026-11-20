@@ -233,3 +233,19 @@ invalid IDs and contradictory mappings fail atomically. Untagged complete positi
 lists remain supported. Recorded partial results require explicit IDs; ambiguous legacy
 partial lists and malformed restored identities are rejected. Canonical identity follows
 the proposal set, so arbitrary embedded payload IDs cannot bypass receipt immutability.
+
+## Tool timing and provider JSON text (T-012)
+
+- `tool_end` observers receive a detached receipt copy with integer `latency_ms`. It
+  measures the executor call only, on a monotonic clock; preparation, `tool_start`
+  observers and permission policy are excluded. Denied calls report 0.
+- The value is journaled as `extensions["execution"]["calls"][id]["latency_ms"]` for Agent
+  and Model one-shot dispatch when an executor ran. It is optional: reconciled, legacy
+  and unregistered-call records have none. `ToolCallResult.latency_ms` and the
+  `agent.tool` log event carry the same number.
+- Receipts in `tool_results` are unchanged and remain the only tool data sent to providers.
+- A call that raises ends the batch without `tool_end`, so it has no latency record.
+- JSON text that Synaptic builds for providers (Chat Completions tool arguments/results,
+  xAI arguments/results/schema, Claude and xAI structured-output text) keeps non-ASCII
+  characters literal. `synaptic.set_ensure_ascii(True)` restores escaping process-wide.
+  The internal `dedup_tools` key and diagnostic writer are unaffected.

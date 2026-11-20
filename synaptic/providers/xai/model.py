@@ -2,6 +2,7 @@ from ._request import XAIRequest
 import inspect
 import asyncio
 import json
+from ...core._json import dumps
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, List, Optional
 
@@ -83,7 +84,7 @@ class XAIAdapter(XAIRequest, BaseModel):
         tool_calls = parse_calls(response)
         if self.response_format == ResponseFormat.JSON and not tool_calls:
             try:
-                message = json.dumps(json.loads(message))
+                message = dumps(json.loads(message))
             except Exception:
                 pass
         u = usage or getattr(response, "usage", None)
