@@ -40,6 +40,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         executor=None,
         policy_required: bool = False,
         max_parallel_tools: int = 1,
+        ledger=None,
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -70,6 +71,8 @@ class Agent(AgentStream, _execution.AgentExecution):
         self._managed_names = set(self._registry.all())
         self.max_protocol_retries = max_protocol_retries
         self.model.history = self.session.history
+        if ledger is not None:
+            ledger.attach(self)
 
     def on(self, event: str, fn) -> None:
         return self.events.on(event, fn)
@@ -94,6 +97,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         self.session.state = "running"
         self.model.history = self.session.history
         _bus.emit({"type": "agent.start", "session_id": self.session.id})
+        self._note("run_start")
 
     def _finish(self) -> None:
         error = sys.exc_info()[1]
@@ -116,10 +120,12 @@ class Agent(AgentStream, _execution.AgentExecution):
         else:
             self.session.state = "failed"
         _bus.emit({"type": "agent.end", "session_id": self.session.id})
+        self._note("run_end", outcome=outcome)
 
     def _add_user(self, prompt: Optional[str], role: str, images=None, audio=None) -> None:
         if prompt is not None or images or audio:
             created = datetime.now().astimezone(timezone.utc)
+            self._note("input", prompt=prompt, role=role)
             self.session.history.add(
                 UserMem(
                     message=prompt or "",

@@ -287,3 +287,19 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
 - If a call fails, its siblings run to completion and their receipts are recorded; the
   failed call is journaled `uncertain`, the response is marked incomplete and the first
   failure in call order is raised. Cancelling the run cancels the whole batch.
+
+## Run ledger and replay (T-015)
+
+- `synaptic.Ledger` appends ordered entries (`seq`, `at`, `kind`, `session_id`, data) and
+  never edits or removes them. Reads return deep copies. Appends are thread-safe.
+- `Agent(ledger=...)` or `ledger.attach(agent)` records `run_start`, `input`, `model`,
+  `tool_start`, `tool_end`, `run_end`. Lifecycle entries are written directly by the
+  agent; model and tool entries arrive through the agent's EventBus, so they follow its
+  observer-failure policy. One ledger per agent at a time; `attach` returns a subscription.
+- `sink(entry)` is the storage hook. Sink failures warn (`RuntimeWarning`) and do not
+  interrupt the run or remove the in-memory entry.
+- `fork(seq)` copies a prefix. `synaptic.run.replay`/`areplay` feed each recorded run's
+  first input to another agent and return a new ledger; effects are really executed and
+  media inputs are not re-sent. `compare` reports both summaries and integer deltas.
+- The ledger is evidence, not state: resume and reconciliation still use History.
+- Streamed agent responses now carry `latency_ms` like `run`/`arun` responses.

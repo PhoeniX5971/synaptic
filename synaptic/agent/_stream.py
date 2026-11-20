@@ -71,6 +71,7 @@ class AgentStream(AgentState):
                     if close:
                         await close()
                 mem = completion.memory(created)
+                mem.latency_ms = getattr(self.model.last_response, "latency_ms", None)
                 tool_calls = mem.tool_calls
                 self.session.history.add(mem)
                 await self._atool_results(tool_calls, mem, abort)

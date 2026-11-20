@@ -25,6 +25,12 @@ class AgentState:
     max_parallel_tools: int = 1
     max_protocol_retries: int
 
+    ledger = None  # Optional run ledger; see synaptic.run.Ledger.attach.
+
+    def _note(self, kind: str, **data) -> None:
+        if self.ledger is not None:
+            self.ledger.append(kind, session_id=self.session.id, **data)
+
     def _retain_generation_error(self):
         partial = getattr(self.model, "last_response", None)
         if partial is not None and partial not in self.session.history.entries:

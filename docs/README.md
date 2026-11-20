@@ -11,7 +11,8 @@ new to the framework:
 6. [`core/memory.md`](core/memory.md)
 7. [`core/streaming-events.md`](core/streaming-events.md)
 8. [`core/flows.md`](core/flows.md)
-9. [`providers/index.md`](providers/index.md)
+9. [`core/ledger.md`](core/ledger.md)
+10. [`providers/index.md`](providers/index.md)
 
 Provider-specific notes:
 

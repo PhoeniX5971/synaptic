@@ -2,6 +2,8 @@
 
 ## Unreleased — integration qualification
 
+- `Ledger`: append-only run record with storage sink, fork, replay and compare.
+- Fixed: streamed agent responses now report `latency_ms`.
 - Opt-in parallel tool dispatch: `autotool(parallel=True)` with `Agent(max_parallel_tools=N)`.
 - `tool_end`, `ToolCallResult`, the execution journal and `agent.tool` logs report
   executor-only `latency_ms`; provider-visible receipts are unchanged.
