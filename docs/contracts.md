@@ -303,3 +303,26 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
   media inputs are not re-sent. `compare` reports both summaries and integer deltas.
 - The ledger is evidence, not state: resume and reconciliation still use History.
 - Streamed agent responses now carry `latency_ms` like `run`/`arun` responses.
+
+## Task state, context compilation, resume, handoff and delegation (T-016)
+
+- `Session.task` is a consumer-owned JSON-compatible dict, exposed as `Agent.task`.
+  Synaptic never reads or writes it. `Session.to_dict()`/`from_dict()` (version 1) carry
+  id, history, metadata, task and outcome; a restored session is always `idle`.
+  History construction options (size aside) and compilers are not serialized.
+- `History.compiler(mems) -> mems` projects the provider context after budgeting and
+  deduplication, on every `effective_mems()` call. Canonical entries, recovery records
+  and continuation checks are unaffected. `Agent(context=fn)` installs
+  `fn(entries, task)` on the session history at each turn boundary.
+- Resume is `Agent(..., session=restored).run(None)`. Unresolved exchanges still block
+  continuation after restoration. No effect is replayed.
+- `Agent.handoff(model)` is applied at the next turn boundary (including the first turn
+  of the next run). Tools are unbound from the previous model and bound to the target;
+  the target receives the session history. An active target raises at that boundary and
+  fails the run. The in-flight response is not interrupted. Recorded as `agent.handoff`
+  on the logging bus and `handoff` in the ledger.
+- `Agent.as_tool` / `subagent` wrap an agent or factory as a Tool taking `task: str` and
+  returning the final message. Factory delegates are marked parallel-safe; single-agent
+  delegates are not. Delegate failures and budget exhaustion surface as tool failures.
+  Parent cancellation propagates through task cancellation; a parent `abort` event is
+  not passed to the delegate.

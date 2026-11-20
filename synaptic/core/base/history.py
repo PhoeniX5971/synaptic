@@ -39,6 +39,8 @@ class History:
         self.size = size
         self.on_truncate = on_truncate
         self.dedup_tools = dedup_tools
+        # Optional per-request projection of the context; never mutates entries.
+        self.compiler: Optional[Callable[[List[Memory]], List[Memory]]] = None
 
     def _retain(self, memory: Memory) -> None:
         memory._histories.add(self)
@@ -99,6 +101,11 @@ class History:
         return _history_io.deserialize(value)
 
     def effective_mems(self) -> List[Memory]:
+        """Provider context: budgeted entries, deduplicated, then compiled if configured."""
+        mems = self._effective()
+        return list(self.compiler(mems)) if self.compiler else mems
+
+    def _effective(self) -> List[Memory]:
         """Return entries, optionally with stale duplicate tool results pruned.
 
         When dedup_tools=True, for each (tool_name, args) pair only the last

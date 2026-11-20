@@ -17,10 +17,10 @@ _PROTOCOL_REPROMPT = (
 )
 
 
-from ._state import AgentState
+from ._control import AgentControl
 
 
-class AgentStream(AgentState):
+class AgentStream(AgentControl):
     @guarded
     async def astream(
         self, prompt: Optional[str], role: str = "user", abort=None, **kwargs

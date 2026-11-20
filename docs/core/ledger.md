@@ -57,3 +57,5 @@ print(compare(ledger, fresh))        # summaries, tool-sequence match, numeric d
 It really executes the other agent's tools, and recorded images or audio are not re-sent.
 The ledger is an audit record, not the resume source: conversation state is restored
 from `History`.
+
+A model handoff adds a `handoff` entry with `source` and `target` model names.

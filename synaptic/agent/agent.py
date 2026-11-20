@@ -41,6 +41,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         policy_required: bool = False,
         max_parallel_tools: int = 1,
         ledger=None,
+        context=None,
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -59,6 +60,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         for t in tools or []:
             self._registry.register(t)
         self._base_instructions = model.instructions or ""
+        self._signal_mode = signal_mode
         self._text_mode = needs_text_mode(model.provider, signal_mode)
         self._dsl_parser = None
         if self._text_mode:
@@ -71,6 +73,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         self._managed_names = set(self._registry.all())
         self.max_protocol_retries = max_protocol_retries
         self.model.history = self.session.history
+        self.context = context
         if ledger is not None:
             ledger.attach(self)
 
@@ -83,6 +86,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         self._dsl_parser.register(name, handler)
 
     def _prepare_turn(self):
+        self._turn_hook()
         self.model.last_response = None
         self._turn_tools = self._registry.all()
         if not self._text_mode:
