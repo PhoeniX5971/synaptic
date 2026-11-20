@@ -27,6 +27,10 @@ ResponseMem(
 )
 ```
 
+Responses returned by a model call also carry `latency_ms` (model-call duration) and,
+after tools run, `tool_outcomes[call_id]["latency_ms"]` per tool. `latency_ms` on the
+response is not saved by `History.to_dict()`.
+
 ## History
 
 `History` is an ordered sliding window:
