@@ -49,8 +49,9 @@ res = model.invoke("Hello")
 print(res.message)
 ```
 
-`invoke` runs one synchronous call. `ainvoke` has the same behavior but is
-awaitable.
+`invoke` runs one synchronous, non-streaming call. `ainvoke` returns the same kind of
+response but is awaitable; internally it is `astream` consumed to the end. Responses
+carry `latency_ms`, the duration of the model call.
 
 ```python
 res = await model.ainvoke("Hello")

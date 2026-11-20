@@ -29,7 +29,9 @@ Maintainer checklist:
 6. Review the final changelog/version/tag/artifacts; the maintainer performs publication
    through their chosen release channel and verifies the resulting installed artifacts.
 
-Current CI selects Ubuntu 24.04, CPython 3.13.8 and uv 0.12.10. It uses read-only repository
+Current CI selects Ubuntu 24.04, CPython 3.13.8 and uv 0.12.10, plus a test-and-typing
+matrix on CPython 3.11.14 and 3.12.12. As of 2026-11-20 every remote run has failed at
+startup with a workflow-file error before any job ran; fix that before relying on step 4. It uses read-only repository
 permissions, no provider credentials and immutable action commits. The pinned upstream
 releases are [checkout v6.0.2](https://github.com/actions/checkout/releases/tag/v6.0.2) and
 [setup-uv v8.0.0](https://github.com/astral-sh/setup-uv/releases/tag/v8.0.0). The configured

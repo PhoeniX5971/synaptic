@@ -36,12 +36,14 @@ from synaptic import (
     Agent,
     EventBus,
     History,
+    Ledger,
     Model,
     Provider,
     Session,
     Tool,
     ToolRegistry,
     autotool,
+    subagent,
 )
 ```
 
@@ -50,7 +52,12 @@ from synaptic import (
 - Use `Model.invoke()` for one request.
 - Use `Model.astream()` for streaming text.
 - Use `Model(autorun=True)` for one-turn tool execution.
-- Use `Agent.run()` / `Agent.arun()` for multi-turn tool workflows.
+- Use `Agent.run()` / `Agent.arun()` for multi-turn tool workflows, and
+  `Agent.astream()` for the same run with chunks as they arrive.
+- Use `Ledger` to record, store, fork or replay runs.
+- Use `agent.task` for facts about the work, `Agent(context=...)` to choose what the
+  model sees, `agent.handoff(model)` to switch models mid-run, and `agent.as_tool(...)`
+  to delegate to another agent.
 - Use `ToolRegistry` to isolate tools between sessions or tests.
 - Use `History(size=N)` to control context size.
 - Use `Flow` or `Pipeline` for predictable non-agent workflows.

@@ -17,6 +17,9 @@ uv run --frozen --all-extras python scripts/check_quality.py
 uv run --frozen --all-extras python scripts/check_release.py
 ```
 
+The tracked CI workflow has not completed a run on GitHub (it currently fails at
+startup), so these results are local only.
+
 Not measured: Windows, macOS, other interpreters, SDK versions outside `uv.lock`, and
 live provider services. Provider adapters are verified against the pinned SDK types
 and recorded HTTP fixtures; a provider or model may support less than its adapter.

@@ -90,3 +90,12 @@ agent = Agent(model, session=session, tool_registry=registry)
 
 Use one `Session` per conversation and one `ToolRegistry` when tool scope must
 be isolated.
+
+## 6. Where next
+
+- [Agent guide](core/agent.md): task state, context, saving and resuming, handoff,
+  subagents, and sending tool failures back to the model.
+- [Tool guide](core/tool.md): parallel-safe tools and non-English text.
+- [Events](core/streaming-events.md) and the [run ledger](core/ledger.md): observing,
+  timing and recording runs.
+- [Support and limitations](support.md) before you rely on it in production.

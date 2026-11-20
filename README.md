@@ -12,8 +12,9 @@ cd synaptic
 pip install -e ".[openai]"
 ```
 
-Python 3.11+ is the declared floor; qualification is CPython 3.13.8 on Linux x86_64
-with the pinned SDKs. Windows and other Python/platform versions are unqualified.
+Python 3.11+ is the declared floor. The test and typing gate passes on CPython 3.11,
+3.12 and 3.13 on Linux x86_64 with the pinned SDKs; installs are checked on 3.13.
+Windows, macOS and live provider services are unmeasured.
 Core installation (`pip install -e .`) includes no provider SDKs.
 Choose extras: `openai`, `deepseek`, `claude`, `gemini`, `vertex`, `together`, `xai`,
 `mcp`, or `all`. Pass credentials explicitly or configure the chosen SDK environment;
@@ -86,10 +87,11 @@ async for chunk in model.astream("Write a haiku"):
 - `ToolRegistry`: isolate tools per test, user, tenant, or session.
 - `History`: sliding-window memory used as provider context.
 - `Session`: state and history container for agent runs.
-- `EventBus`: subscribe to agent text/tool/step events.
+- `EventBus`: subscribe to agent text/tool/step events, with tool and model latency.
 - `Flow` / `Pipeline`: lightweight sync/async workflow helpers.
 - `Ledger`: append-only record of runs with storage sink, fork, replay and compare.
-- Agent control: task state, context compiler, model handoff, subagents, parallel tools.
+- Agent control: task state, context compiler, model handoff, subagents, parallel tools,
+  and tool failures returned to the model on request.
 
 ## Documentation
 
@@ -105,5 +107,6 @@ GNU General Public License v3.0. See the repository license for details.
 See [CONTRIBUTING](CONTRIBUTING.md), [security reporting](SECURITY.md),
 [release guidance](docs/releasing.md) and [changelog](CHANGELOG.md). The
 [tracked qualification workflow](.github/workflows/qualification.yml) runs the frozen
-gates; no remote run is claimed by the local qualification record. Try the credential-free
+gates, but it currently fails to start on GitHub and has never completed a run, so all
+results are local. Try the credential-free
 [offline example](examples/offline.py) for tools and serialized recovery receipts.

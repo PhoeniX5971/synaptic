@@ -59,3 +59,10 @@ model = Model(
     api_key="none",
 )
 ```
+
+## Tool results
+
+Synaptic keeps one tool-result shape internally and each adapter sends it in the
+provider's own form: the call ID travels in `tool_call_id` (OpenAI-compatible, xAI),
+`tool_use_id` (Claude) or the function-response ID (Gemini). Failures use the provider's
+error marking where it has one. The exact table is in [runtime contracts](../contracts.md).
