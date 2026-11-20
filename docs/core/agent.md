@@ -85,12 +85,13 @@ agent.on("tool_end", lambda call, result: print(result, result["latency_ms"]))
 agent.on("step_end", lambda response: print(response.message))
 ```
 
-Streaming also emits `text_delta`.
+`arun` and `astream` also emit `text_delta`; a raising tool emits `tool_error`.
 
 ## Streaming
 
-`Agent.astream()` streams one model turn and emits text events. Use `arun()` for
-the full multi-turn continuation loop.
+`Agent.astream()` runs the full multi-turn loop and yields chunks as they arrive,
+across model turns and tool calls. `arun()` is the same run without consuming chunks
+yourself: it returns the final response.
 
 ## Task State
 
