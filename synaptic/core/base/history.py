@@ -25,11 +25,15 @@ class History:
         dedup_tools: bool = False,
         token_budget: Optional[int] = None,
         token_counter=None,
+        archive_limit: Optional[int] = None,
     ):
         if size < 1 or (
             token_budget is not None and (token_budget < 1 or token_counter is None)
         ):
             raise ValueError("Positive history size/budget and explicit token_counter required")
+        if archive_limit is not None and archive_limit < 0:
+            raise ValueError("archive_limit must be nonnegative")
+        self.archive_limit = archive_limit
         self.token_budget, self.token_counter = token_budget, token_counter
         self.entries: List[Memory] = list(memory_list or [])
         self.recovery: list[ResponseMem] = []
@@ -54,6 +58,22 @@ class History:
     def enforce_budget(self) -> None:
         """Trim provider context as whole entries; recovery evidence is independent."""
         self._size_update()
+        if self.archive_limit is not None:
+            self._prune_archives(self.archive_limit)
+
+    def _prune_archives(self, limit: int) -> None:
+        """Drop the oldest evidence beyond the limit; never an unresolved or in-context record."""
+        del self.failed_attempts[: max(0, len(self.failed_attempts) - limit)]
+        excess = len(self.recovery) - limit
+        for memory in list(self.recovery):
+            if excess <= 0:
+                break
+            resolved = not memory.extensions.get("incomplete") and len(
+                memory.tool_results
+            ) == len(memory.tool_calls)
+            if resolved and not any(memory is entry for entry in self.entries):
+                self.recovery.remove(memory)
+                excess -= 1
 
     def _size_update(self) -> None:
         excess = max(0, len(self.entries) - self.size)

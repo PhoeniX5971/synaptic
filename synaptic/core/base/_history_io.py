@@ -32,9 +32,11 @@ def encode(memory):
 
 
 def serialize(history):
+    limit = {} if history.archive_limit is None else {"archive_limit": history.archive_limit}
     return {
         "version": 1,
         "size": history.size,
+        **limit,
         "entries": [encode(memory) for memory in history.entries],
         # Active context already encodes the same object; don't restore a stale second copy.
         "recovery": [
@@ -65,7 +67,11 @@ def deserialize(data):
 
     if data.get("version") != 1:
         raise ValueError("Unsupported history serialization version")
-    history = History([decode(raw) for raw in data["entries"]], size=data.get("size", 10))
+    history = History(
+        [decode(raw) for raw in data["entries"]],
+        size=data.get("size", 10),
+        archive_limit=data.get("archive_limit"),
+    )
     for raw in data.get("recovery", []):
         history._retain(decode(raw))
     for raw in data.get("failed_attempts", []):

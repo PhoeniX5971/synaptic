@@ -326,3 +326,13 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
   delegates are not. Delegate failures and budget exhaustion surface as tool failures.
   Parent cancellation propagates through task cancellation; a parent `abort` event is
   not passed to the delegate.
+
+## Bounded evidence archives (T-017)
+
+`History(archive_limit=N)` bounds `failed_attempts` to the newest N and removes the oldest
+`recovery` records beyond N, but only records that are resolved (not incomplete, one
+result per call) and no longer in `entries`. Unresolved records are retained regardless,
+so continuation checks cannot be bypassed by eviction. Pruning runs in
+`enforce_budget()`. The default None keeps the previous unbounded behaviour. The limit
+is serialized as `archive_limit` only when set; restoration lists in-context records
+before out-of-context ones, which does not affect what is prunable.

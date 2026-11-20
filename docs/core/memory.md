@@ -44,6 +44,19 @@ history.add(UserMem("hello", created=created))
 
 When more than `size` entries exist, old entries are dropped.
 
+## Archive limit
+
+Besides the context window, a history keeps tool exchanges that left the window
+(`recovery`) and failed generation attempts (`failed_attempts`) as evidence. These grow
+without bound unless you set a limit:
+
+```python
+History(size=20, archive_limit=200)
+```
+
+The oldest records beyond the limit are dropped. A tool exchange that is unresolved or
+still inside the context window is never dropped, so the list can exceed the limit.
+
 ## Truncation
 
 Use `on_truncate` when dropped context matters:
