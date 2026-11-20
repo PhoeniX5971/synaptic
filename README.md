@@ -18,7 +18,7 @@ Core installation (`pip install -e .`) includes no provider SDKs.
 Choose extras: `openai`, `deepseek`, `claude`, `gemini`, `vertex`, `together`, `xai`,
 `mcp`, or `all`. Pass credentials explicitly or configure the chosen SDK environment;
 Synaptic does not load `.env` files. See [runtime contracts](docs/contracts.md),
-[migrations](docs/migration.md), and [measured qualification](docs/qualification.md).
+[migrations](docs/migration.md), and [measured support and limitations](docs/support.md).
 
 ## First Model Call
 

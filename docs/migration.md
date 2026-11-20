@@ -52,7 +52,7 @@ is bounded by health_interval + request_timeout, not instantaneous.
 shutdown_timeout=..., health_interval=..., request_timeout=...)` configures limits.
 Discovery consumes all pages and returns a copy; limit/validation/timeout failures
 preserve the previous catalog. MCPHub accepts existing server configs but its
-registry refresh/removal semantics are still under T-006 review.
+registry refresh/removal semantics are still under review.
 
 Install the MCP extra (`mcp>=1.30,<2`). Only 1.30.0 is measured so far; 2.x is
 excluded pending an explicit API/protocol migration.
@@ -96,9 +96,9 @@ excluded pending an explicit API/protocol migration.
 
 The earlier statement that hub refresh remained under review is historical and is
 superseded by these contracts. See [runtime contracts](contracts.md) for lifecycle
-semantics and [qualification](qualification.md) for exact measured limits.
+semantics and [support](support.md) for exact measured limits.
 
-## Control readiness follow-up
+## Incremental execution follow-up
 
 Model autorun now stops and raises on tool/executor/output-validation failure. Earlier
 receipts remain in history when automem is enabled, and in `model.last_response` otherwise.
@@ -117,7 +117,7 @@ opt into `manages_admission=True` and use Invocation.check_cancelled/begin_effec
 queue admission; existing opaque executors retain conservative uncertain-effect semantics.
 See contracts.md before implementing a custom executor.
 
-## Control integration review (T-011)
+## Integration review
 
 - Retry + Model + automem now retries invisible effect-free generation failures without
   duplicating prompts. Failed-attempt records live in history.failed_attempts (also with
@@ -140,7 +140,7 @@ Run scripts/check_quality.py and scripts/check_release.py under the frozen devel
 Python. The install harness now invokes the development host's mypy against each selected
 isolated target, so run it with that host rather than a bare core-only Python interpreter.
 
-## Tool latency and literal non-ASCII JSON (T-012)
+## Tool latency and literal non-ASCII JSON
 
 - Provider-bound JSON text no longer escapes non-ASCII characters. Requests are still
   valid JSON; consumers that compared or hashed the escaped text, or use an endpoint
@@ -149,7 +149,7 @@ isolated target, so run it with that host rather than a bare core-only Python in
 - `tool_end` result copies gain `latency_ms`; handlers that compare the whole dict to a
   receipt must ignore that key. Execution journal entries may gain `latency_ms`.
 
-## Native tool-result content (T-013)
+## Native tool-result content
 
 - Chat Completions tool messages previously contained the whole receipt JSON
   (`name`, `call_id`, `result`); they now contain only the value. Error receipts become

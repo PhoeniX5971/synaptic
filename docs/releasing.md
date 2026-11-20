@@ -14,7 +14,7 @@ whether it can read histories written by each supported prior serialization vers
 
 Maintainer checklist:
 
-1. Review [handoff](next-steps.md), [known issues](known-issues.md), [contracts](contracts.md)
+1. Review [support and limitations](support.md), [contracts](contracts.md)
    and [changelog](../CHANGELOG.md). Choose/version the final change; update migrations.
 2. Confirm the private reporting route in [SECURITY.md](../SECURITY.md). This is currently
    an unmet public-release prerequisite; no contact or enabled channel has been invented.
@@ -24,7 +24,7 @@ Maintainer checklist:
 4. After the maintainer publishes the branch, require the tracked CI job to pass on the
    exact release revision. Configured CI is not proof of a remote run. Record the run URL.
 5. Record artifact hashes, Python/platform/SDK versions, warnings and commands in
-   [qualification](qualification.md). Review included files and license. Test proposed
+   [support](support.md). Review included files and license. Test proposed
    additional platforms/protocols/providers before expanding support claims.
 6. Review the final changelog/version/tag/artifacts; the maintainer performs publication
    through their chosen release channel and verifies the resulting installed artifacts.

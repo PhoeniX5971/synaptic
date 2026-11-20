@@ -21,31 +21,11 @@ Provider-specific notes:
 
 Runnable examples live in [`examples/`](examples/).
 
-## Production and handoff records
+## Reference
 
-Read [next steps](next-steps.md), [roadmap](roadmap.md), latest
-[progress](progress-log.md), and [development plan](development-plan.md) first.
-Then consult [architecture](architecture.md), [implementation rationale](implementation-rationale.md),
-[decisions](decisions.md), [known issues](known-issues.md), [testing](testing.md),
-[debugging](debugging.md), and [technology/compatibility](tech-stack.md).
-The [hardening brief](hardening-brief.md) preserves requested acceptance criteria.
-
-Stable IDs: M milestones, T tasks, D decisions, BUG defects, F findings, S sessions.
-Never reuse IDs. Progress is append-only, oldest first. Archived plan and memory
-under `archive/` preserve history and are not current release-readiness claims.
-Raw local transcripts under `logs/` are ignored and are not portable project memory.
-
-See [migration notes](migration.md) for changed public contracts.
-
-Measured evidence: [qualification](qualification.md). Scope/status by original finding:
-[finding report](finding-report.md).
-
-Current runtime APIs: [contracts](contracts.md), [provider matrix](provider-matrix.md),
-the [retry policy](retry-policy.md), and the accepted [follow-up brief](followup-brief.md). `next-steps.md` is the compact
-portable handoff; `progress-log.md` is append-only implementation evidence.
-
-Control readiness findings and their resolution: [readiness follow-up](readiness-followup.md).
-
-The current [integration follow-up](integration-followup.md) supplements previous reviews.
-Contributor/release entry points: [CONTRIBUTING](../CONTRIBUTING.md),
-[SECURITY](../SECURITY.md), [release discipline](releasing.md), [CHANGELOG](../CHANGELOG.md).
+- [Runtime contracts](contracts.md): exact behaviour of execution, events, history and providers.
+- [Provider matrix](provider-matrix.md) and [retry policy](retry-policy.md).
+- [Migration notes](migration.md): changed public contracts.
+- [Support and limitations](support.md): measured environments and known limits.
+- [Release discipline](releasing.md), [CONTRIBUTING](../CONTRIBUTING.md),
+  [SECURITY](../SECURITY.md), [CHANGELOG](../CHANGELOG.md).

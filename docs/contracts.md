@@ -1,6 +1,6 @@
 # Runtime contracts
 
-These contracts apply to the hardening follow-up. [Qualification](qualification.md)
+These contracts apply to the hardening follow-up. [Support](support.md)
 separates local fixtures from live services; [migration](migration.md) lists changes.
 
 ## Model, tools and execution
@@ -128,7 +128,7 @@ Native SDK exceptions retain their types/context. Retry classifies transport/tim
 HTTP 408/429/5xx and recognized SDK transient errors, without classifying authentication,
 argument validation or programming errors as transient.
 
-## Incremental execution and cancellation (Control readiness follow-up)
+## Incremental execution and cancellation
 
 Every Model autorun and Agent batch publishes receipts to `ResponseMem.tool_results`
 **by call ID after each successful call, before observers or the next call**. If a
@@ -183,7 +183,7 @@ opaque executor cancellation remains `uncertain`. Synaptic cannot stop external 
 that ignores the gate or prove that a remote request was not accepted. No durable
 exactly-once or process-crash recovery guarantee is made by this in-memory journal.
 
-## Integration ownership: attempts, context and recovery (T-011)
+## Integration ownership: attempts, context and recovery
 
 `Retry(Model(...))` owns each eligible generation attempt and holds the Model history's
 operation guard through backoff. With autorun disabled, failures before any provider
@@ -234,7 +234,7 @@ lists remain supported. Recorded partial results require explicit IDs; ambiguous
 partial lists and malformed restored identities are rejected. Canonical identity follows
 the proposal set, so arbitrary embedded payload IDs cannot bypass receipt immutability.
 
-## Tool timing and provider JSON text (T-012)
+## Tool timing and provider JSON text
 
 - `tool_end` observers receive a detached receipt copy with integer `latency_ms`. It
   measures the executor call only, on a monotonic clock; preparation, `tool_start`
@@ -250,7 +250,7 @@ the proposal set, so arbitrary embedded payload IDs cannot bypass receipt immuta
   characters literal. `synaptic.set_ensure_ascii(True)` restores escaping process-wide.
   The internal `dedup_tools` key and diagnostic writer are unaffected.
 
-## Uniform receipts, native provider tool results (T-013)
+## Uniform receipts, native provider tool results
 
 Synaptic keeps one receipt shape in history: `{"name", "call_id", "result" | "error"}`.
 `providers/_results.py` is the only reader; each adapter wraps the value the way its SDK
@@ -274,7 +274,7 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
   handlers on that path must be synchronous. `ToolCallResult.error` carries the receipt's
   error message, or None.
 
-## Parallel tool dispatch (T-014)
+## Parallel tool dispatch
 
 - Opt-in twice: the tool carries `metadata["parallel"]` and the Agent has
   `max_parallel_tools > 1`. Default behaviour is unchanged sequential dispatch.
@@ -288,7 +288,7 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
   failed call is journaled `uncertain`, the response is marked incomplete and the first
   failure in call order is raised. Cancelling the run cancels the whole batch.
 
-## Run ledger and replay (T-015)
+## Run ledger and replay
 
 - `synaptic.Ledger` appends ordered entries (`seq`, `at`, `kind`, `session_id`, data) and
   never edits or removes them. Reads return deep copies. Appends are thread-safe.
@@ -304,7 +304,7 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
 - The ledger is evidence, not state: resume and reconciliation still use History.
 - Streamed agent responses now carry `latency_ms` like `run`/`arun` responses.
 
-## Task state, context compilation, resume, handoff and delegation (T-016)
+## Task state, context compilation, resume, handoff and delegation
 
 - `Session.task` is a consumer-owned JSON-compatible dict, exposed as `Agent.task`.
   Synaptic never reads or writes it. `Session.to_dict()`/`from_dict()` (version 1) carry
@@ -327,7 +327,7 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
   Parent cancellation propagates through task cancellation; a parent `abort` event is
   not passed to the delegate.
 
-## Bounded evidence archives (T-017)
+## Bounded evidence archives
 
 `History(archive_limit=N)` bounds `failed_attempts` to the newest N and removes the oldest
 `recovery` records beyond N, but only records that are resolved (not incomplete, one

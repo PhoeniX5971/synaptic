@@ -1,6 +1,6 @@
 # Contributing
 
-Start with [project records](docs/README.md), [handoff](docs/next-steps.md) and
+Start with [documentation](docs/README.md), [support and limitations](docs/support.md) and
 [runtime contracts](docs/contracts.md). Use uv 0.12.10 and CPython 3.13.8 on Linux
 for the currently qualified baseline:
 

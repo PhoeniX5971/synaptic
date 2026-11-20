@@ -25,5 +25,4 @@
 - Tracked deterministic CI, contribution, security-reporting and release guidance added.
 
 Existing 0.1.0 hardening work and previous review fixes remain described in
-[history](docs/progress-log.md), [migration notes](docs/migration.md) and
-[qualification](docs/qualification.md). No release publication is asserted here.
+[migration notes](docs/migration.md) and [support](docs/support.md). No release publication is asserted here.

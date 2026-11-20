@@ -2,7 +2,7 @@
 
 This is a pre-1.0 framework with no promised security-maintenance window or response SLA.
 The currently qualified development baseline and exact dependency/platform limits are
-recorded in [qualification](docs/qualification.md). Version ranges do not establish
+recorded in [support](docs/support.md). Version ranges do not establish
 security support for every dependency release, platform or live provider.
 
 A maintainer-approved private reporting route has not yet been designated. Before a
@@ -20,4 +20,4 @@ Synaptic executes tools authorized by its consumer; it is not a sandbox. Provide
 credentials, execution grants, host isolation, durable effect recording and incident
 response remain application responsibilities. Cancellation cannot undo an admitted
 remote effect or running thread. See [contracts](docs/contracts.md) and
-[known limitations](docs/known-issues.md) before deployment.
+[known limitations](docs/support.md) before deployment.
