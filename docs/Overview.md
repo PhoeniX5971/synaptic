@@ -18,6 +18,14 @@ be bound directly to a model or scoped through a registry.
 
 `EventBus` broadcasts agent events such as streamed text and tool start/end.
 
+`Ledger` records what a run did, in order, for inspection, storage and replay.
+
+`Session` carries the conversation plus `task`, a dict for facts about the work that
+should not depend on the conversation; it serializes for saving and resuming.
+
+An `Agent` can also compile its own context per request, hand a live run to another
+model, delegate to other agents as tools, and run parallel-safe tools concurrently.
+
 `Flow` and `Pipeline` are small workflow helpers for deterministic app logic
 outside the model loop.
 

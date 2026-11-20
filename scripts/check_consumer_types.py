@@ -5,9 +5,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-VALID = """from typing import assert_type, Literal
+VALID = """from typing import Any, assert_type, Literal
 from synaptic import Model, Provider, History, ResponseMem, ResponseChunk, Agent, ContentBlock, ToolCall
-from synaptic import ToolCallResult, set_ensure_ascii
+from synaptic import ToolCallResult, set_ensure_ascii, Ledger, Session, Tool, subagent
 
 history = History(size=20)
 model = Model(Provider.OPENAI, "fixture", history=history, autorun=False)
@@ -17,6 +17,16 @@ assert_type(History.from_dict(history.to_dict()), History)
 assert_type(ToolCall("tool", {}).id, str)
 assert_type(ContentBlock("text", text="hello").kind, Literal["text", "image", "audio", "resource"])
 set_ensure_ascii(False)
+ledger, session = Ledger(), Session()
+assert_type(ledger.fork(0), Ledger)
+assert_type(ledger.append("note"), dict[str, Any])
+assert_type(Session.from_dict(session.to_dict()), Session)
+assert_type(History(archive_limit=5).archive_limit, int | None)
+controlled = Agent(model, session=session, ledger=ledger, max_parallel_tools=2)
+controlled.handoff(model)
+assert_type(controlled.task, dict[str, Any])
+assert_type(controlled.as_tool("worker", "Work"), Tool)
+assert_type(subagent("worker", "Work", controlled), Tool)
 assert_type(model.invoke("hello").latency_ms, int | None)
 assert_type(ToolCallResult(ToolCall("tool", {}), None).latency_ms, int | None)
 assert_type(ToolCallResult(ToolCall("tool", {}), None).error, str | None)
@@ -47,6 +57,11 @@ INVALID = [
     "agent.run(42)",
     'model.invoke("hello").missing_attribute',
     'set_ensure_ascii("yes")',
+    'Ledger(sink=42)',
+    'History(archive_limit="many")',
+    'agent.as_tool(42, "Work")',
+    'Session.from_dict(42)',
+    'Agent(model, max_parallel_tools="all")',
     'model.invoke("hello").latency_ms + 1',
 ]
 
@@ -57,7 +72,7 @@ def check_types(python: Path, directory: Path) -> None:
     valid = directory / "valid_consumer.py"
     valid.write_text(VALID)
     invalid = directory / "invalid_consumer.py"
-    prefix = 'from synaptic import Model, Provider, History, ContentBlock, Agent, set_ensure_ascii\nmodel = Model(Provider.OPENAI, "fixture")\nagent = Agent(model)\nasync def invalid() -> None:\n'
+    prefix = 'from synaptic import Model, Provider, History, ContentBlock, Agent, set_ensure_ascii, Ledger, Session\nmodel = Model(Provider.OPENAI, "fixture")\nagent = Agent(model)\nasync def invalid() -> None:\n'
     invalid.write_text(prefix + "".join("    " + line + "\n" for line in INVALID))
     env = {**os.environ, "MYPYPATH": "", "PYTHONPATH": ""}
     command = [

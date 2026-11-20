@@ -88,6 +88,8 @@ async for chunk in model.astream("Write a haiku"):
 - `Session`: state and history container for agent runs.
 - `EventBus`: subscribe to agent text/tool/step events.
 - `Flow` / `Pipeline`: lightweight sync/async workflow helpers.
+- `Ledger`: append-only record of runs with storage sink, fork, replay and compare.
+- Agent control: task state, context compiler, model handoff, subagents, parallel tools.
 
 ## Documentation
 

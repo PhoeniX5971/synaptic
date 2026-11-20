@@ -2,6 +2,7 @@
 
 ## Unreleased — integration qualification
 
+- Quality gate verified on CPython 3.11 and 3.12 in addition to 3.13.
 - `History(archive_limit=N)` bounds resolved recovery and failed-attempt evidence.
 - Agent control: `task` state, `context` compiler, `Session.to_dict/from_dict`, `handoff`, `as_tool`/`subagent`.
 - `Ledger`: append-only run record with storage sink, fork, replay and compare.

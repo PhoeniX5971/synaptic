@@ -3,6 +3,7 @@
 from typing import Any, Callable, Dict, List, Optional
 
 from ..core.base import Memory
+from ..core.tool import Tool
 from ..logging import _bus
 from ..signal.collector import SignalMode, needs_text_mode
 from ..signal.dsl import build_dsl_instructions
@@ -23,7 +24,7 @@ class AgentControl(AgentState):
         """The session's canonical task state; tools and compilers share this object."""
         return self.session.task
 
-    def as_tool(self, name: str, description: str, *, sync: bool = False):
+    def as_tool(self, name: str, description: str, *, sync: bool = False) -> Tool:
         """This agent as a delegation tool for another agent."""
         return subagent(name, description, self, sync=sync)
 
