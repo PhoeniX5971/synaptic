@@ -98,6 +98,10 @@ from ..signal.events import ToolCallResult as _SignalTCR
 from ._state import AgentState
 
 
+def _signal(call, result, ms):
+    return _SignalTCR(call=call, result=result, error=result.get("error"), latency_ms=ms)
+
+
 class AgentExecution(AgentState):
     def _tool_results(self, calls: List[ToolCall], memory=None, abort=None) -> List[Any]:
         mem = memory if memory is not None else ResponseMem("", None, tool_calls=calls)
@@ -110,6 +114,9 @@ class AgentExecution(AgentState):
                 result, ms = _timed(self, call, state, abort)
                 state.record(call, result, ms)
                 self.events.emit("tool_end", copy.deepcopy(call), _observed(result, ms))
+                state.check()
+                if self.signals:
+                    self.signals.emit("ToolCallResult", _signal(call, result, ms))
                 self._log_tool(call, result, ms)
                 state.check()
         return mem.tool_results
@@ -127,9 +134,7 @@ class AgentExecution(AgentState):
                 await self.events.aemit("tool_end", copy.deepcopy(call), _observed(result, ms))
                 state.check()
                 if self.signals:
-                    await self.signals.aemit(
-                        "ToolCallResult", _SignalTCR(call=call, result=result, latency_ms=ms)
-                    )
+                    await self.signals.aemit("ToolCallResult", _signal(call, result, ms))
                 self._log_tool(call, result, ms)
                 state.check()
         return mem.tool_results

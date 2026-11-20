@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from ...core.base import ResponseMem
 from ...core.base.content import references, message_text
 from .._media import claude_content
+from .._results import result_text, tool_value
 
 
 def tool_id(turn_index: int, call_index: int) -> str:
@@ -33,18 +34,15 @@ def history_messages(history) -> List[Dict[str, Any]]:
             result_content: List[Dict[str, Any]] = []
             for call_idx, call in enumerate(memory.tool_calls):
                 result = results[call_idx] if call_idx < len(results) else {}
-                resp = (
-                    result.get("result", result.get("error", ""))
-                    if isinstance(result, dict)
-                    else str(result)
-                )
-                result_content.append(
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": call.id,
-                        "content": str(resp),
-                    }
-                )
+                resp, failed = tool_value(result)
+                block: Dict[str, Any] = {
+                    "type": "tool_result",
+                    "tool_use_id": call.id,
+                    "content": result_text(resp),
+                }
+                if failed:
+                    block["is_error"] = True
+                result_content.append(block)
             if result_content:
                 messages.append({"role": "user", "content": result_content})
         else:

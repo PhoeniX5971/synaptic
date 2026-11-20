@@ -1,6 +1,7 @@
 """Legacy helper import path for the shared Chat conversion contract."""
 
-from .._chat_history import history_messages as history_messages, result_text as result_text
+from .._chat_history import history_messages as history_messages
+from .._results import result_text as result_text
 from .._chat import parse_calls as parse_tool_calls, arguments
 from .._media import chat_content
 from ...core.tool import ToolCall

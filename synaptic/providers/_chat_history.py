@@ -4,19 +4,7 @@ from typing import Any, Dict, List
 from ..core.base import ResponseMem
 from ..core.base.content import references, message_text
 from ._media import chat_content
-
-
-def result_text(result: Any) -> str:
-    try:
-        if hasattr(result, "model_dump"):
-            return dumps(result.model_dump())
-        if hasattr(result, "__dict__"):
-            return dumps(result.__dict__)
-        if isinstance(result, (dict, list)):
-            return dumps(result)
-    except Exception:
-        pass
-    return str(result)
+from ._results import tool_text
 
 
 def history_messages(history, instructions: str, role_map: Dict[str, str]) -> List[Dict[str, Any]]:
@@ -52,7 +40,7 @@ def history_messages(history, instructions: str, role_map: Dict[str, str]) -> Li
                     {
                         "role": "tool",
                         "name": name,
-                        "content": result_text(result),
+                        "content": tool_text(result),
                         "tool_call_id": memory.tool_calls[i].id,
                     }
                 )

@@ -64,6 +64,8 @@ class ResponseMem(Memory):
         self.output_tokens = output_tokens
         self.extensions = dict(extensions or {})
         self.finish_reason = normalize_finish(finish_reason, self.extensions)
+        # Model-call duration set by the runner; observational, not serialized.
+        self.latency_ms: Optional[int] = None
 
     @property
     def tool_outcomes(self) -> dict:

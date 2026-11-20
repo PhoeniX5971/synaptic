@@ -9,6 +9,7 @@ from xai_sdk.chat import assistant, system, image, text, tool_result, user
 from .._media import image_url
 from ...core.base.content import references, message_text
 from .._chat import arguments
+from .._results import tool_text
 from xai_sdk.proto import chat_pb2
 
 from ...core.base import ResponseMem
@@ -61,12 +62,7 @@ def history_messages(history) -> List[chat_pb2.Message]:
                 )
             )
             for i, (_, result) in enumerate(zip(memory.tool_calls, memory.tool_results or [])):
-                value = (
-                    dumps(result.get("result", result.get("error", result)))
-                    if isinstance(result, dict)
-                    else str(result)
-                )
-                messages.append(tool_result(value, tool_call_id=memory.tool_calls[i].id))
+                messages.append(tool_result(tool_text(result), tool_call_id=memory.tool_calls[i].id))
         elif memory.role == "assistant":
             messages.append(assistant(text(message_text(memory) or "")))
         else:

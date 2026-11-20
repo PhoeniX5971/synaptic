@@ -4,6 +4,10 @@
 
 - `tool_end`, `ToolCallResult`, the execution journal and `agent.tool` logs report
   executor-only `latency_ms`; provider-visible receipts are unchanged.
+- Tool results reach each provider in its native form from one uniform receipt: value-only
+  content, JSON instead of Python repr, and native error marking where available.
+- `ResponseMem.latency_ms` reports model-call duration; sync agent runs emit
+  `ToolCallResult`, which now carries `error`.
 - Provider-bound JSON text keeps non-ASCII characters literal by default;
   `synaptic.set_ensure_ascii(True)` restores escaping.
 - Safe Model generation retries retain failed-attempt evidence independently of context.

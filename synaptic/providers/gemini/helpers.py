@@ -8,6 +8,7 @@ from google.genai import types
 from ...core.base import ResponseMem
 from ...core.base.content import references, message_text
 from .._media import read_media
+from .._results import tool_response
 
 
 # -----------------------------
@@ -78,15 +79,10 @@ def history_contents(history, role_map) -> list[types.Content]:
             results = getattr(memory, "tool_results", None) or []
             response_parts: list[types.Part] = []
             for call, result in zip(memory.tool_calls, results):
-                resp = (
-                    result.get("result", result.get("error", ""))
-                    if isinstance(result, dict)
-                    else str(result)
-                )
                 response_parts.append(
                     types.Part(
                         function_response=types.FunctionResponse(
-                            name=call.name, response={"result": resp}, id=call.id
+                            name=call.name, response=tool_response(result), id=call.id
                         )
                     )
                 )

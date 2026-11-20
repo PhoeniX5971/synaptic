@@ -67,7 +67,7 @@ async def astream(
     except BaseException as error:
         partial = completion.memory(created)
         ExecutionState(partial, abort).interrupt(error)
-        remember(model, partial, _automem, prompt, role, created, images, audio)
+        remember(model, partial, _automem, prompt, role, created, images, audio, t0)
         raise
     finally:
         close = getattr(source, "aclose", None)
@@ -88,7 +88,7 @@ async def astream(
         )
 
     final_mem = completion.memory(created)
-    remember(model, final_mem, _automem, prompt, role, created, images, audio)
+    remember(model, final_mem, _automem, prompt, role, created, images, audio, t0)
     with ExecutionState(final_mem, abort):
         check_cancelled(abort)
         if _autorun and final_mem.tool_calls:

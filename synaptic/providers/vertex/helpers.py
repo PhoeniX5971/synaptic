@@ -9,6 +9,7 @@ from vertexai.generative_models import Content, GenerationConfig, Part
 from ...core.base import ResponseFormat, ResponseMem
 from ...core.tool import ToolCall
 from ...core.base.content import references, message_text
+from .._results import tool_response
 
 
 def history_contents(history, role_map) -> List[Content]:
@@ -31,16 +32,8 @@ def history_contents(history, role_map) -> List[Content]:
             )
             response_parts = []
             for call, result in zip(mem.tool_calls, mem.tool_results or []):
-                resp = (
-                    result.get("result", result.get("error", ""))
-                    if isinstance(result, dict)
-                    else str(result)
-                )
                 response_parts.append(
-                    Part.from_function_response(
-                        name=call.name,
-                        response={"result": resp},
-                    )
+                    Part.from_function_response(name=call.name, response=tool_response(result))
                 )
             if response_parts:
                 contents.append(Content(role="user", parts=response_parts))

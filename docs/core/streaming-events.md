@@ -62,7 +62,8 @@ Async handlers are supported by `aemit`, which `Agent.arun` uses.
 - `tool_start`: before a tool runs.
 - `tool_end`: after a tool result or error. The observer's `result` copy carries
   `latency_ms`: executor time only, excluding policy and observer time (0 when denied).
-- `step_end`: after each model response in an agent loop.
+- `step_end`: after each model response in an agent loop; `response.latency_ms` is the
+  model-call duration.
 
 ## Tool Latency
 

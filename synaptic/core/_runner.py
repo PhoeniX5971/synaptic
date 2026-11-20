@@ -9,8 +9,6 @@ from ._execution_state import ExecutionState, check_cancelled
 from .base.content import media_content
 from .capabilities import Capabilities, UnsupportedCapability
 from ..logging import _bus
-
-
 from ._tool_execution import run_tools_sync, run_tools_async
 
 
@@ -91,7 +89,7 @@ def invoke(
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
-    remember(model, memory, _automem, prompt, role, created, images, audio)
+    remember(model, memory, _automem, prompt, role, created, images, audio, t0)
     with ExecutionState(memory, abort):
         check_cancelled(abort)
         if _autorun and memory.tool_calls:
@@ -140,7 +138,7 @@ async def ainvoke(
     except BaseException as error:
         memory = completion.memory(created)
         ExecutionState(memory, abort).interrupt(error)
-        remember(model, memory, _automem, prompt, role, created, images, audio)
+        remember(model, memory, _automem, prompt, role, created, images, audio, t0)
         raise
     finally:
         close = getattr(source, "aclose", None)
@@ -164,7 +162,7 @@ async def ainvoke(
             }
         )
 
-    remember(model, memory, _automem, prompt, role, created, images, audio)
+    remember(model, memory, _automem, prompt, role, created, images, audio, t0)
     with ExecutionState(memory, abort):
         check_cancelled(abort)
         if _autorun and memory.tool_calls:
@@ -180,7 +178,9 @@ async def ainvoke(
     return memory
 
 
-def remember(model, memory, automem, prompt, role, created, images, audio):
+def remember(model, memory, automem, prompt, role, created, images, audio, t0=None):
+    if t0 is not None:
+        memory.latency_ms = int((time.monotonic() - t0) * 1000)
     model.last_response = memory
     if _attempt.archive_failure(model, memory):
         return

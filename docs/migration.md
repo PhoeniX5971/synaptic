@@ -148,3 +148,15 @@ isolated target, so run it with that host rather than a bare core-only Python in
 - Claude/xAI structured-output messages now contain literal non-ASCII characters.
 - `tool_end` result copies gain `latency_ms`; handlers that compare the whole dict to a
   receipt must ignore that key. Execution journal entries may gain `latency_ms`.
+
+## Native tool-result content (T-013)
+
+- Chat Completions tool messages previously contained the whole receipt JSON
+  (`name`, `call_id`, `result`); they now contain only the value. Error receipts become
+  `{"error": message}`.
+- Claude tool results are JSON for structured values instead of a Python repr, and
+  error receipts set `is_error`. Gemini/Vertex error receipts use the `error` key
+  instead of `{"result": message}`. xAI string results are no longer JSON-quoted.
+- `Agent.run` with a `signals` bus now emits `ToolCallResult`; async handlers on that
+  bus require `arun()`/`astream()`.
+- `result_text` moved to `synaptic.providers._results`; the `openai_.helpers` re-export remains.

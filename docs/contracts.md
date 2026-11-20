@@ -249,3 +249,27 @@ the proposal set, so arbitrary embedded payload IDs cannot bypass receipt immuta
   xAI arguments/results/schema, Claude and xAI structured-output text) keeps non-ASCII
   characters literal. `synaptic.set_ensure_ascii(True)` restores escaping process-wide.
   The internal `dedup_tools` key and diagnostic writer are unaffected.
+
+## Uniform receipts, native provider tool results (T-013)
+
+Synaptic keeps one receipt shape in history: `{"name", "call_id", "result" | "error"}`.
+`providers/_results.py` is the only reader; each adapter wraps the value the way its SDK
+is meant to be used, and correlation travels only in the provider's own call-ID field.
+
+| Adapter | Correlation | Success content | Error content |
+| --- | --- | --- | --- |
+| Chat Completions (OpenAI-compatible) | `tool_call_id` | string as-is, otherwise JSON | `{"error": message}` JSON |
+| Claude | `tool_use_id` | string as-is, otherwise JSON | message with `is_error: true` |
+| Gemini | `FunctionResponse.id` and name | `{"result": value}` | `{"error": message}` |
+| Vertex | function name (SDK has no ID) | `{"result": value}` | `{"error": message}` |
+| xAI | `tool_call_id` | string as-is, otherwise JSON | `{"error": message}` JSON |
+
+- `name`/`call_id` are no longer repeated inside tool content. Plain string results are
+  not JSON-quoted, so `set_ensure_ascii` affects only structured values and arguments.
+- A dict that is not a receipt (no `result`/`error`) is sent whole.
+- `ResponseMem.latency_ms` is the model-call duration set by the runner for invoke,
+  ainvoke and astream, visible to `step_end` observers. It is not serialized; restored
+  and hand-built responses report None.
+- Synchronous agent runs emit the `ToolCallResult` signal like async runs. Signal
+  handlers on that path must be synchronous. `ToolCallResult.error` carries the receipt's
+  error message, or None.
