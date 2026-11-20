@@ -7,6 +7,7 @@ import sys
 
 VALID = """from typing import assert_type, Literal
 from synaptic import Model, Provider, History, ResponseMem, ResponseChunk, Agent, ContentBlock, ToolCall
+from synaptic import ToolCallResult, set_ensure_ascii
 
 history = History(size=20)
 model = Model(Provider.OPENAI, "fixture", history=history, autorun=False)
@@ -15,6 +16,10 @@ assert_type(model.propose("plan"), ResponseMem)
 assert_type(History.from_dict(history.to_dict()), History)
 assert_type(ToolCall("tool", {}).id, str)
 assert_type(ContentBlock("text", text="hello").kind, Literal["text", "image", "audio", "resource"])
+set_ensure_ascii(False)
+assert_type(model.invoke("hello").latency_ms, int | None)
+assert_type(ToolCallResult(ToolCall("tool", {}), None).latency_ms, int | None)
+assert_type(ToolCallResult(ToolCall("tool", {}), None).error, str | None)
 
 async def consume() -> None:
     assert_type(await model.ainvoke("hello"), ResponseMem)
@@ -41,6 +46,8 @@ INVALID = [
     'ContentBlock("invalid-kind")',
     "agent.run(42)",
     'model.invoke("hello").missing_attribute',
+    'set_ensure_ascii("yes")',
+    'model.invoke("hello").latency_ms + 1',
 ]
 
 
@@ -50,7 +57,7 @@ def check_types(python: Path, directory: Path) -> None:
     valid = directory / "valid_consumer.py"
     valid.write_text(VALID)
     invalid = directory / "invalid_consumer.py"
-    prefix = 'from synaptic import Model, Provider, History, ContentBlock, Agent\nmodel = Model(Provider.OPENAI, "fixture")\nagent = Agent(model)\nasync def invalid() -> None:\n'
+    prefix = 'from synaptic import Model, Provider, History, ContentBlock, Agent, set_ensure_ascii\nmodel = Model(Provider.OPENAI, "fixture")\nagent = Agent(model)\nasync def invalid() -> None:\n'
     invalid.write_text(prefix + "".join("    " + line + "\n" for line in INVALID))
     env = {**os.environ, "MYPYPATH": "", "PYTHONPATH": ""}
     command = [
