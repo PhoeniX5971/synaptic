@@ -11,6 +11,8 @@ from .._media import chat_content
 
 class OpenAIAdapter(BaseModel):
     capabilities = Capabilities(images=True, audio=True)
+    # Whether a response schema is sent as json_schema (enforced) or only json_object.
+    enforce_schema = True
 
     @staticmethod
     def _clients(api_key, base_url):
@@ -32,8 +34,11 @@ class OpenAIAdapter(BaseModel):
         tool_registry=None,
         max_tokens=1024,
         base_url=None,
+        enforce_schema=None,
         **kwargs,
     ):
+        if enforce_schema is not None:
+            self.enforce_schema = bool(enforce_schema)
         self.client, self.async_client = self._clients(api_key, base_url)
         self.model, self.history = model, history
         self.temperature, self.instructions = temperature, instructions
@@ -71,7 +76,7 @@ class OpenAIAdapter(BaseModel):
             schema = self.response_schema
             if hasattr(schema, "model_json_schema"):
                 schema = schema.model_json_schema()
-            if schema and self.__class__ is OpenAIAdapter:
+            if schema and self.enforce_schema:
                 params["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {"name": "response", "schema": schema},

@@ -5,6 +5,7 @@ from ...core.capabilities import Capabilities
 
 class DeepSeekAdapter(OpenAIAdapter):
     capabilities = Capabilities()
+    enforce_schema = False  # The API offers json_object only.
 
     @staticmethod
     def _clients(api_key, base_url):

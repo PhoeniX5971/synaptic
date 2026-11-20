@@ -45,6 +45,7 @@ class Model(ModelAPI, ModelBindings):
         tool_registry: Optional[ToolRegistry] = None,
         executor=None,
         legacy_registry: bool = False,
+        enforce_schema: Optional[bool] = None,
     ) -> None:
         self.provider = provider
         self.model = model
@@ -88,6 +89,7 @@ class Model(ModelAPI, ModelBindings):
             project=project,
             base_url=base_url,
             tool_registry=tool_registry,
+            enforce_schema=enforce_schema,
         )
         self.llm._invalidate_tools()
         self.tools = self.llm.synaptic_tools

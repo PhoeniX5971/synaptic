@@ -21,6 +21,7 @@ def build_adapter(
     project: Optional[str],
     base_url: Optional[str],
     tool_registry: Optional[ToolRegistry] = None,
+    enforce_schema: Optional[bool] = None,
 ) -> Any:
     kwargs = dict(
         model=model,
@@ -34,11 +35,13 @@ def build_adapter(
         instructions=instructions,
         tool_registry=tool_registry,
     )
+    # Only the Chat Completions family chooses between json_schema and json_object.
+    chat = {"enforce_schema": enforce_schema}
 
     if provider == Provider.CLAUDE:
         return _adapter("ClaudeAdapter")(**kwargs)
     elif provider == Provider.OPENAI:
-        return _adapter("OpenAIAdapter")(**kwargs, base_url=base_url)
+        return _adapter("OpenAIAdapter")(**kwargs, **chat, base_url=base_url)
     elif provider == Provider.GEMINI:
         return _adapter("GeminiAdapter")(**kwargs)
     elif provider == Provider.VERTEX:
@@ -48,13 +51,13 @@ def build_adapter(
             project=project,
         )
     elif provider == Provider.DEEPSEEK:
-        return _adapter("DeepSeekAdapter")(**kwargs, base_url=base_url)
+        return _adapter("DeepSeekAdapter")(**kwargs, **chat, base_url=base_url)
     elif provider == Provider.TOGETHER:
         return _adapter("TogetherAdapter")(**kwargs)
     elif provider == Provider.XAI:
         return _adapter("XAIAdapter")(**kwargs)
     elif provider == Provider.UNIVERSAL_OPENAI:
-        return _adapter("UniversalLLMAdapter")(**kwargs, base_url=base_url or "")
+        return _adapter("UniversalLLMAdapter")(**kwargs, **chat, base_url=base_url or "")
     else:
         raise ValueError(f"Unknown provider: {provider!r}")
 

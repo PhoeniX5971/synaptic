@@ -45,8 +45,9 @@ model = Model(
 )
 ```
 
-When a Pydantic-style schema exposes `model_json_schema`, Synaptic sends an
-OpenAI JSON schema response format. Otherwise it requests a JSON object.
+With a schema (a dict or a Pydantic-style class exposing `model_json_schema`), Synaptic
+sends an OpenAI `json_schema` response format so the output is constrained to it. Pass
+`enforce_schema=False` to request a plain JSON object instead.
 
 ## Streaming
 

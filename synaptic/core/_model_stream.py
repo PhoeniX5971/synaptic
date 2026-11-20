@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 from ._completion import Completion
@@ -24,7 +25,7 @@ async def astream(
     **kwargs,
 ):
     """Stream one generation. `operation="ainvoke"` only changes diagnostics naming."""
-    streaming = operation == "astream"
+    streaming, call_id = operation == "astream", uuid4().hex
     check_cancelled(abort)
     _check(model, operation, images, audio)
     if role not in ("user", "assistant", "system"):
@@ -40,6 +41,7 @@ async def astream(
         _bus.emit(
             {
                 "type": "model.stream.start",
+                "model_call_id": call_id,
                 "provider": str(model.provider),
                 "model": model.model,
                 "prompt": prompt,
@@ -65,7 +67,9 @@ async def astream(
             completion.add(chunk)
             if not chunk.is_final and chunk.text:
                 if streaming and _bus.stream_chunks and _bus.active():
-                    _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
+                    _bus.emit(
+                        {"type": "model.stream.chunk", "model_call_id": call_id, "text": chunk.text}
+                    )
             yield chunk
     except BaseException as error:
         partial = completion.memory(created)
@@ -78,10 +82,14 @@ async def astream(
             await close()
 
     if _bus.active():
-        detail = {} if streaming else {"prompt": prompt, "role": role, "context": _ctx(model)}
+        # The end event stands alone: prompt and result together, no pairing by order.
+        detail: dict = {"prompt": prompt, "role": role}
+        if not streaming:
+            detail["context"] = _ctx(model)
         _bus.emit(
             {
                 "type": "model.stream.end" if streaming else "model.ainvoke",
+                "model_call_id": call_id,
                 "provider": str(model.provider),
                 "model": model.model,
                 **detail,

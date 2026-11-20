@@ -76,3 +76,12 @@ agent.on("tool_end", lambda call, result: print(call.name, result["latency_ms"],
 The same value is journaled per call ID in `response.tool_outcomes[call_id]["latency_ms"]`
 (also for `Model(autorun=True)`), on the `ToolCallResult` signal and in the `agent.tool`
 log event. It is never added to `tool_results`, so it is not sent to the provider.
+
+## Diagnostic log events
+
+`enable_logging(path)` (or a `DiagnosticBus`) records model calls as `model.invoke`,
+`model.ainvoke`, or `model.stream.start` / `model.stream.chunk` / `model.stream.end`.
+Every event of one model call carries the same `model_call_id`, so concurrent calls can
+be told apart. `model.stream.end` is self-contained: it has `prompt` and `role` as well
+as `response`, token counts and `latency_ms`. `prompt`, `context` and `response` appear
+only when payload logging is enabled.

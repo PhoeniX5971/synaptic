@@ -3,12 +3,18 @@
 import copy
 import inspect
 import time
+from typing import Any, List
 
 from ..core._awaitables import require_sync
 from ..logging import _bus
 from ..core.invocation import LocalExecutor
 from ..core._execution_state import ExecutionState, admit, check_cancelled
 from ..core.base import ResponseMem
+from ..core.tool import ToolCall
+from ..signal.events import ToolCallResult as _SignalTCR
+from ._delegate import abort_scope
+from ._parallel import batches, gather
+from ._state import AgentState
 
 
 def prepare(agent, call):
@@ -109,16 +115,6 @@ async def _atimed(agent, call, state=None, abort=None):
         raise
     receipt = {"name": invocation.name, "call_id": invocation.call_id, "result": value}
     return receipt, _ms(start), "succeeded"
-
-
-from typing import List, Any
-from ..core.tool import ToolCall
-from ..signal.events import ToolCallResult as _SignalTCR
-
-
-from ._state import AgentState
-from ._parallel import batches, gather
-from ._delegate import abort_scope
 
 
 def _signal(call, result, ms):

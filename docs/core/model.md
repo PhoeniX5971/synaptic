@@ -38,6 +38,8 @@ Model(
 - `instructions`: system or developer guidance sent to the provider.
 - `response_format`: `ResponseFormat.NONE` or `ResponseFormat.JSON`.
 - `response_schema`: schema used for structured JSON responses.
+- `enforce_schema`: for OpenAI-compatible providers, send the schema as `json_schema`
+  (`True`) or request only a JSON object (`False`). Default depends on the provider.
 - `blacklist`: tool names that must not be executed.
 - `location` / `project`: Vertex provider configuration.
 - `base_url`: Universal OpenAI-compatible endpoint.

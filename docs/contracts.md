@@ -362,3 +362,14 @@ before out-of-context ones, which does not affect what is prunable.
   items (`TypeError`) or contains a tool exchange without all results (`ValueError`).
 - Ledger `input` entries record string media references; replay passes them back.
 - The Claude adapter names tools by `Tool.name`.
+
+## Schema enforcement choice and correlated model diagnostics
+
+- OpenAI-family adapters carry `enforce_schema`: default True for OpenAI, False for
+  Universal OpenAI and DeepSeek. `Model(enforce_schema=...)` overrides it. True sends
+  `response_format: {"type": "json_schema", "json_schema": {"name": "response", "schema": ...}}`
+  when a schema is present; otherwise `json_object`. Other providers ignore the option.
+- Every model diagnostic event has `model_call_id`, unique per model call and shared by
+  the start, chunk and end events of one stream. It survives event truncation.
+- `model.stream.end` additionally carries `prompt` and `role`; payload fields remain
+  subject to the bus `payloads` setting.

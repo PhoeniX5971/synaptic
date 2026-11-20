@@ -25,6 +25,14 @@ live provider services. Provider adapters are verified against the pinned SDK ty
 and recorded HTTP fixtures; a provider or model may support less than its adapter.
 Package version ranges are not a support claim.
 
+## Stability
+
+Introduced together and not yet exercised by production consumers or live providers:
+the run ledger and replay, model handoff, subagents, context compilers, task state,
+parallel tool dispatch and returned tool errors. They are tested, but treat their
+interfaces as subject to change until they have real use. Model, tools, history,
+events and the provider adapters are the established core.
+
 ## Limitations
 
 **Execution**

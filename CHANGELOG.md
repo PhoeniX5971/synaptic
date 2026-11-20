@@ -2,6 +2,8 @@
 
 ## Unreleased — integration qualification
 
+- `Model(enforce_schema=True)` sends `json_schema` on OpenAI-compatible servers such as vLLM.
+- Model diagnostic events share a `model_call_id`; `model.stream.end` includes the prompt.
 - One agent loop behind `run`, `arun` and `astream`; `arun` and `Model.ainvoke` are drained streams.
 - `tool_errors="return"` / `autotool(errors=...)` send tool failures to the model; new `tool_error` event.
 - Guards: one agent run per `Model`; validated context compiler output; subagents receive the parent's abort.

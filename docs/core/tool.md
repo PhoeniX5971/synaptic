@@ -99,7 +99,8 @@ See [contracts](../contracts.md) for Executor injection and [migration](../migra
 Tool arguments, tool results and structured output are serialized for providers with
 non-ASCII text kept literal (`ensure_ascii=False`), so Arabic and other non-Latin text
 is not expanded into `\uXXXX` escapes. Call `synaptic.set_ensure_ascii(True)` once at
-startup only if an endpoint requires ASCII-only JSON text.
+startup only if an endpoint requires ASCII-only JSON text. This is one setting for the
+whole process: it applies to every model and provider, not to a single `Model`.
 
 ## Parallel-safe tools
 

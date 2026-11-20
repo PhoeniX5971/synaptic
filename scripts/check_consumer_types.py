@@ -10,7 +10,7 @@ from synaptic import Model, Provider, History, ResponseMem, ResponseChunk, Agent
 from synaptic import ToolCallResult, set_ensure_ascii, Ledger, Session, Tool, subagent
 
 history = History(size=20)
-model = Model(Provider.OPENAI, "fixture", history=history, autorun=False)
+model = Model(Provider.OPENAI, "fixture", history=history, autorun=False, enforce_schema=True)
 assert_type(model.invoke("hello"), ResponseMem)
 assert_type(model.propose("plan"), ResponseMem)
 assert_type(History.from_dict(history.to_dict()), History)
@@ -63,6 +63,7 @@ INVALID = [
     'Session.from_dict(42)',
     'Agent(model, max_parallel_tools="all")',
     'Agent(model, tool_errors=42)',
+    'Model(Provider.OPENAI, "fixture", enforce_schema="yes")',
     'model.invoke("hello").latency_ms + 1',
 ]
 

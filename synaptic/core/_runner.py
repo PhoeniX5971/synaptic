@@ -1,4 +1,5 @@
 import time
+from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -74,6 +75,7 @@ def invoke(
         _bus.emit(
             {
                 "type": "model.invoke",
+                "model_call_id": uuid4().hex,
                 "provider": str(model.provider),
                 "model": model.model,
                 "prompt": prompt,

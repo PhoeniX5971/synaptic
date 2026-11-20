@@ -67,7 +67,7 @@ def prepare(event, payloads, secrets, redact, max_bytes):
             "truncated": True,
             **{
                 key: bounded(candidate[key])
-                for key in ("session_id", "run_id", "call_id")
+                for key in ("session_id", "run_id", "call_id", "model_call_id")
                 if key in candidate
             },
         }

@@ -173,3 +173,10 @@ isolated target, so run it with that host rather than a bare core-only Python in
 - Execution journal entries may have status `failed`.
 - Two agents can no longer run nested on one `Model`; give each its own instance.
 - A history compiler returning an empty list or a non-Memory item now raises.
+
+## Schema enforcement option and diagnostic call IDs
+
+- No default changes: Universal OpenAI and DeepSeek still send `json_object` unless
+  `enforce_schema=True`. Adapter subclasses of `OpenAIAdapter` that relied on getting
+  `json_object` automatically now inherit `enforce_schema = True` and should set it False.
+- Diagnostic events gain `model_call_id`; `model.stream.end` gains `prompt` and `role`.
