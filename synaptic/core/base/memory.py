@@ -111,7 +111,7 @@ def complete_tool_call(
     mem.tool_results = correlated
     outcomes = mem.tool_outcomes
     for call in mem.tool_calls:
-        if call.id in outcomes and outcomes[call.id]["status"] not in ("succeeded", "denied"):
+        if call.id in outcomes and outcomes[call.id]["status"] not in ("succeeded", "denied", "failed"):
             outcomes[call.id]["status"] = "reconciled"
     if outcomes:
         mem.extensions["execution"] = {"version": 1, "calls": outcomes}

@@ -12,6 +12,15 @@ if TYPE_CHECKING:
     from ..core.model import Model
 
 
+def media_refs(images, audio) -> dict:
+    """String media references (paths, URLs) are recordable; in-memory objects are not."""
+    refs = {
+        "images": [item for item in images or [] if isinstance(item, str)],
+        "audio": [item for item in audio or [] if isinstance(item, str)],
+    }
+    return {key: value for key, value in refs.items() if value}
+
+
 class AgentState:
     model: Model
     session: Session
@@ -26,6 +35,14 @@ class AgentState:
     max_protocol_retries: int
 
     ledger = None  # Optional run ledger; see synaptic.run.Ledger.attach.
+    tool_errors: str = "raise"
+
+    def _claim(self, model) -> None:
+        """One agent run per Model: a nested run on the same Model would swap its history."""
+        owner = getattr(model, "_agent_run", None)
+        if owner is not None and owner is not self:
+            raise RuntimeError("Model is driving another agent run; give each agent its own Model")
+        model._agent_run = self
 
     def _note(self, kind: str, **data) -> None:
         if self.ledger is not None:

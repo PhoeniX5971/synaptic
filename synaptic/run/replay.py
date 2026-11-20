@@ -12,8 +12,11 @@ def inputs(ledger: Ledger) -> list[dict[str, Any]]:
         if entry["kind"] == "run_start":
             runs.append({"prompt": None, "role": "user", "open": True})
         elif entry["kind"] == "input" and runs and runs[-1].pop("open", False):
-            runs[-1].update(prompt=entry["prompt"], role=entry["role"])
-    return [{"prompt": run["prompt"], "role": run["role"]} for run in runs]
+            media = {key: entry[key] for key in ("images", "audio") if key in entry}
+            runs[-1].update(prompt=entry["prompt"], role=entry["role"], **media)
+    for run in runs:
+        run.pop("open", None)
+    return runs
 
 
 def _prepare(agent):
@@ -22,12 +25,12 @@ def _prepare(agent):
 
 
 def replay(ledger: Ledger, agent) -> Ledger:
-    """Synchronous replay; text inputs only (recorded media is not re-sent)."""
+    """Synchronous replay of text and referenced (path/URL) media inputs."""
     fresh = Ledger()
     with fresh.attach(agent):
         for run in inputs(ledger):
             _prepare(agent)
-            agent.run(run["prompt"], role=run["role"])
+            agent.run(**run)
     return fresh
 
 
@@ -36,7 +39,7 @@ async def areplay(ledger: Ledger, agent) -> Ledger:
     with fresh.attach(agent):
         for run in inputs(ledger):
             _prepare(agent)
-            await agent.arun(run["prompt"], role=run["role"])
+            await agent.arun(**run)
     return fresh
 
 

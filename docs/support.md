@@ -29,7 +29,9 @@ Package version ranges are not a support claim.
 - Tool effects are at-most-once. Synaptic never replays a tool; an interrupted call is
   recorded as uncertain and must be reconciled before the conversation continues.
   Exactly-once behaviour depends on your tools being idempotent.
-- A tool that raises ends the run. It produces no `tool_end` event and no latency record.
+- By default a tool that raises ends the run (after a `tool_error` event). Opt in with
+  `tool_errors="return"` to send the error to the model instead; a returned failure may
+  still have had partial effects.
 - A cancelled thread-scheduled tool may keep running after cancellation is reported.
 - Parallel tool dispatch applies to `Agent.arun`/`astream` only. Synchronous tool
   functions overlap only when the executor has a thread scheduler.
@@ -44,16 +46,17 @@ Package version ranges are not a support claim.
 
 **Agent control**
 
-- A context compiler's output is not validated; it can produce a request a provider rejects.
+- A context compiler's output is checked only for shape (non-empty, memory objects, complete
+  tool exchanges); it can still produce an ordering a provider rejects.
 - Model handoff applies at turn boundaries and cannot cross signal modes.
-- A subagent must have its own `Model` instance; sharing the lead's is not detected.
-- A parent's `abort` event is not passed to subagents; task cancellation is.
-- Ledger replay really executes tools and does not re-send recorded images or audio.
+- Each running agent needs its own `Model` instance; a nested run on a shared one is refused.
+- Ledger replay really executes tools. It re-sends images/audio given as paths or URLs,
+  not in-memory objects.
+- A parent's `abort` event reaches subagents, except through thread-scheduled sync tools.
 
 **Providers**
 
 - Vertex correlates tool results by function name; its SDK exposes no call ID.
-- The Claude adapter requires `declaration["name"]` on tools built with `Tool(...)` directly.
 - `set_ensure_ascii` is process-wide, not per model.
 - Resource content references are preserved in history but rejected for provider submission.
 

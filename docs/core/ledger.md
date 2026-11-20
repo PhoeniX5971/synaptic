@@ -26,10 +26,12 @@ Every entry has `seq`, `at` (UTC ISO time), `kind` and `session_id`.
 | `model` | `provider`, `model`, `message`, `tool_calls`, token counts, `finish_reason`, `latency_ms` |
 | `tool_start` | `call_id`, `name`, `args` |
 | `tool_end` | `call_id`, `name`, `result` or `error`, `latency_ms` |
+| `tool_error` | `call_id`, `name`, `error`, `latency_ms` (the tool raised and the run ended) |
 | `run_end` | `outcome` (`completed`, `failed`, `cancelled`, `exhausted`) |
 
 Entries are copies: editing what `ledger.entries` returns does not change the record.
-A tool that raises has a `tool_start` and no `tool_end`; the run ends `failed`.
+A tool that raises has `tool_start` then `tool_error`; the run ends `failed`. `input`
+entries also list `images`/`audio` given as paths or URLs.
 
 ## Storing
 
@@ -54,7 +56,8 @@ print(compare(ledger, fresh))        # summaries, tool-sequence match, numeric d
 ```
 
 `replay` re-sends the recorded text inputs of each run (use `areplay` for async agents).
-It really executes the other agent's tools, and recorded images or audio are not re-sent.
+It really executes the other agent's tools. Media recorded as paths or URLs is re-sent;
+in-memory images or audio are not.
 The ledger is an audit record, not the resume source: conversation state is restored
 from `History`.
 

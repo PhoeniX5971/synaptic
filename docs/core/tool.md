@@ -118,3 +118,9 @@ concurrent calls cannot interfere with each other. Consecutive marked calls in o
 response run together, up to `max_parallel_tools`; an unmarked call is a barrier that runs
 alone, in order. Synchronous tool functions overlap only when the executor has a
 scheduler, e.g. `LocalExecutor(ThreadScheduler(...))`; otherwise they block the loop.
+
+## Failing tools
+
+`@autotool(..., errors="return")` sends this tool's exceptions to the model as an error
+result instead of ending the run; `errors="raise"` forces the opposite. Without it the
+agent's `tool_errors` setting applies. See the agent guide.

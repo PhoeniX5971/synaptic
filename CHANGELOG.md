@@ -2,6 +2,9 @@
 
 ## Unreleased — integration qualification
 
+- One agent loop behind `run`, `arun` and `astream`; `arun` and `Model.ainvoke` are drained streams.
+- `tool_errors="return"` / `autotool(errors=...)` send tool failures to the model; new `tool_error` event.
+- Guards: one agent run per `Model`; validated context compiler output; subagents receive the parent's abort.
 - Quality gate verified on CPython 3.11 and 3.12 in addition to 3.13.
 - `History(archive_limit=N)` bounds resolved recovery and failed-attempt evidence.
 - Agent control: `task` state, `context` compiler, `Session.to_dict/from_dict`, `handoff`, `as_tool`/`subagent`.

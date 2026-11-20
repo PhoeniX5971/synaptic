@@ -20,10 +20,13 @@ async def astream(
     autorun: bool | None = None,
     automem: bool | None = None,
     abort=None,
+    operation: str = "astream",
     **kwargs,
 ):
+    """Stream one generation. `operation="ainvoke"` only changes diagnostics naming."""
+    streaming = operation == "astream"
     check_cancelled(abort)
-    _check(model, "astream", images, audio)
+    _check(model, operation, images, audio)
     if role not in ("user", "assistant", "system"):
         raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
 
@@ -33,7 +36,7 @@ async def astream(
     _autorun = autorun if autorun is not None else model.autorun
     _automem = automem if automem is not None else model.automem
 
-    if _bus.active():
+    if streaming and _bus.active():
         _bus.emit(
             {
                 "type": "model.stream.start",
@@ -61,7 +64,7 @@ async def astream(
                 raise asyncio.CancelledError()
             completion.add(chunk)
             if not chunk.is_final and chunk.text:
-                if _bus.stream_chunks and _bus.active():
+                if streaming and _bus.stream_chunks and _bus.active():
                     _bus.emit({"type": "model.stream.chunk", "text": chunk.text})
             yield chunk
     except BaseException as error:
@@ -75,11 +78,13 @@ async def astream(
             await close()
 
     if _bus.active():
+        detail = {} if streaming else {"prompt": prompt, "role": role, "context": _ctx(model)}
         _bus.emit(
             {
-                "type": "model.stream.end",
+                "type": "model.stream.end" if streaming else "model.ainvoke",
                 "provider": str(model.provider),
                 "model": model.model,
+                **detail,
                 "response": completion.text,
                 "input_tokens": completion.input_tokens,
                 "output_tokens": completion.output_tokens,

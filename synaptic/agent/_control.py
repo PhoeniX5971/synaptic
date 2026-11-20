@@ -50,7 +50,9 @@ class AgentControl(AgentState):
     def _switch(self, target) -> None:
         if getattr(target, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot hand off to an active Model")
+        self._claim(target)
         previous, tools = self.model, list(self._registry.all().values())
+        previous._agent_run = None
         if not self._text_mode and hasattr(previous, "unbind_tools"):
             previous.unbind_tools(*self._managed_names)
         self._managed_names = set()

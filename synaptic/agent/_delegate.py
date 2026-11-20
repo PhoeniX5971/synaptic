@@ -1,8 +1,22 @@
 """Expose an agent as a tool so another agent can delegate a task to it."""
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from ..core.tool import Tool
+
+_abort: ContextVar[Any] = ContextVar("synaptic_agent_abort", default=None)
+
+
+@contextmanager
+def abort_scope(abort):
+    """Expose the running agent's abort event to delegation tools it dispatches."""
+    token = _abort.set(abort)
+    try:
+        yield
+    finally:
+        _abort.reset(token)
 
 
 def subagent(name: str, description: str, source: Any, *, sync: bool = False) -> Tool:
@@ -21,10 +35,10 @@ def subagent(name: str, description: str, source: Any, *, sync: bool = False) ->
         return agent
 
     async def delegate(task: str) -> str:
-        return (await pick().arun(task)).message
+        return (await pick().arun(task, abort=_abort.get())).message
 
     def delegate_sync(task: str) -> str:
-        return pick().run(task).message
+        return pick().run(task, abort=_abort.get()).message
 
     declaration = {
         "name": name,

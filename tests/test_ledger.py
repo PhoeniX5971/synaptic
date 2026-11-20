@@ -73,7 +73,8 @@ def test_failed_run_and_failing_sink_do_not_lose_the_record():
         warnings.simplefilter("always")
         with pytest.raises(LookupError):
             agent.run("go")
-    assert [e["kind"] for e in ledger.entries][-2:] == ["tool_start", "run_end"]
+    assert [e["kind"] for e in ledger.entries][-3:] == ["tool_start", "tool_error", "run_end"]
+    assert ledger.of("tool_error")[0]["error"] == "LookupError: boom"
     assert ledger.of("run_end")[0]["outcome"] == "failed"
     assert any("Ledger sink failed: OSError" in str(item.message) for item in caught)
 

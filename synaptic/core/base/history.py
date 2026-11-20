@@ -123,7 +123,17 @@ class History:
     def effective_mems(self) -> List[Memory]:
         """Provider context: budgeted entries, deduplicated, then compiled if configured."""
         mems = self._effective()
-        return list(self.compiler(mems)) if self.compiler else mems
+        if not self.compiler:
+            return mems
+        compiled = list(self.compiler(mems))
+        if not compiled or not all(isinstance(memory, Memory) for memory in compiled):
+            raise TypeError("History compiler must return a non-empty list of Memory objects")
+        for memory in compiled:
+            if isinstance(memory, ResponseMem) and len(memory.tool_results) != len(
+                memory.tool_calls
+            ):
+                raise ValueError("History compiler returned a tool exchange without its results")
+        return compiled
 
     def _effective(self) -> List[Memory]:
         """Return entries, optionally with stale duplicate tool results pruned.

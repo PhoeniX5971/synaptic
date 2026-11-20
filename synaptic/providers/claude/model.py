@@ -58,7 +58,7 @@ class ClaudeAdapter(ClaudeStream, BaseModel):
 
         self.claude_tools = [
             {
-                "name": t.declaration["name"],
+                "name": t.name,
                 "description": t.declaration.get("description", ""),
                 "input_schema": t.declaration.get(
                     "parameters", {"type": "object", "properties": {}}

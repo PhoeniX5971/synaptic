@@ -58,10 +58,12 @@ Async handlers are supported by `aemit`, which `Agent.arun` uses.
 
 ## Agent Events
 
-- `text_delta`: streamed text from `Agent.astream`.
+- `text_delta`: streamed text from `Agent.astream` and `Agent.arun`.
 - `tool_start`: before a tool runs.
 - `tool_end`: after a tool result or error. The observer's `result` copy carries
   `latency_ms`: executor time only, excluding policy and observer time (0 when denied).
+- `tool_error`: a tool raised and the run is ending; same arguments as `tool_end`, with
+  `error` and `latency_ms`. Not fired when the failure is returned to the model.
 - `step_end`: after each model response in an agent loop; `response.latency_ms` is the
   model-call duration.
 

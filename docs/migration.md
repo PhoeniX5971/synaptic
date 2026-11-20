@@ -160,3 +160,16 @@ isolated target, so run it with that host rather than a bare core-only Python in
 - `Agent.run` with a `signals` bus now emits `ToolCallResult`; async handlers on that
   bus require `arun()`/`astream()`.
 - `result_text` moved to `synaptic.providers._results`; the `openai_.helpers` re-export remains.
+
+## Unified agent loop and tool-error handling
+
+- `Agent.arun` is now the stream drained: `text_delta` handlers and signal collectors
+  attached to an agent fire during `arun` as well. Code that patched `Model.ainvoke` to
+  intercept agent calls must patch the streaming path instead.
+- After a failed `arun`, history holds the partial incomplete response (as `astream`
+  always did) rather than only the model's last response.
+- New `tool_error` event; the ledger gains a `tool_error` entry between `tool_start` and
+  `run_end` for a raising tool.
+- Execution journal entries may have status `failed`.
+- Two agents can no longer run nested on one `Model`; give each its own instance.
+- A history compiler returning an empty list or a non-Memory item now raises.

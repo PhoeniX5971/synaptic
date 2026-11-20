@@ -18,10 +18,10 @@ from ..core._execution_state import check_cancelled
 import sys
 import asyncio
 
+from ._loop import turns
+from ._state import media_refs
+
 Permission = Callable[[str, dict], bool]
-_PROTOCOL_REPROMPT = (
-    "No <tool> or <final> emitted. Emit <tool> to continue or <final></final> to finish."
-)
 
 
 class Agent(AgentStream, _execution.AgentExecution):
@@ -42,6 +42,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         max_parallel_tools: int = 1,
         ledger=None,
         context=None,
+        tool_errors: str = "raise",
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -73,7 +74,9 @@ class Agent(AgentStream, _execution.AgentExecution):
         self._managed_names = set(self._registry.all())
         self.max_protocol_retries = max_protocol_retries
         self.model.history = self.session.history
-        self.context = context
+        if tool_errors not in ("raise", "return"):
+            raise ValueError("tool_errors must be raise or return")
+        self.context, self.tool_errors = context, tool_errors
         if ledger is not None:
             ledger.attach(self)
 
@@ -98,6 +101,7 @@ class Agent(AgentStream, _execution.AgentExecution):
     def _start(self) -> None:
         if self.session.state != "idle":
             raise RuntimeError(f"Session is {self.session.state!r}")
+        self._claim(self.model)
         self.session.state = "running"
         self.model.history = self.session.history
         _bus.emit({"type": "agent.start", "session_id": self.session.id})
@@ -123,13 +127,14 @@ class Agent(AgentStream, _execution.AgentExecution):
             self.session.state = "exhausted"
         else:
             self.session.state = "failed"
+        self.model._agent_run = None
         _bus.emit({"type": "agent.end", "session_id": self.session.id})
         self._note("run_end", outcome=outcome)
 
     def _add_user(self, prompt: Optional[str], role: str, images=None, audio=None) -> None:
         if prompt is not None or images or audio:
             created = datetime.now().astimezone(timezone.utc)
-            self._note("input", prompt=prompt, role=role)
+            self._note("input", prompt=prompt, role=role, **media_refs(images, audio))
             self.session.history.add(
                 UserMem(
                     message=prompt or "",
@@ -143,52 +148,25 @@ class Agent(AgentStream, _execution.AgentExecution):
     def run(
         self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
     ) -> ResponseMem:
+        """Synchronous driver: real non-streaming model calls and inline tool effects."""
         self._start()
+        loop = turns(self, prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None), abort)
         try:
-            next_prompt = None
-            self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
-            for _ in range(self.max_turns):
-                check_cancelled(abort)
-                self._prepare_turn()
-                mem = self.model.invoke(
-                    next_prompt, role=role, autorun=False, automem=False, abort=abort, **kwargs
-                )
-                self.session.history.add(mem)
-                self._tool_results(mem.tool_calls, mem, abort)
-                if not mem.tool_calls:
-                    return mem
-                next_prompt = None
-                role = "user"
-            raise BudgetExceeded("Agent reached max_turns")
+            step, reply = next(loop), None
+            while True:
+                if step[0] == "model":
+                    reply = self.model.invoke(
+                        None, role=step[1], autorun=False, automem=False, abort=abort, **kwargs
+                    ), True
+                else:
+                    self._tool_results(step[1].tool_calls, step[1], abort)
+                    reply = None
+                step = loop.send(reply)
+        except StopIteration as finished:
+            return finished.value
         except BaseException:
             self._retain_generation_error()
             raise
         finally:
-            self._finish()
-
-    @guarded
-    async def arun(
-        self, prompt: Optional[str], role: str = "user", abort=None, **kwargs
-    ) -> ResponseMem:
-        self._start()
-        try:
-            next_prompt = None
-            self._add_user(prompt, role, kwargs.pop("images", None), kwargs.pop("audio", None))
-            for _ in range(self.max_turns):
-                check_cancelled(abort)
-                self._prepare_turn()
-                mem = await self.model.ainvoke(
-                    next_prompt, role=role, autorun=False, automem=False, abort=abort, **kwargs
-                )
-                self.session.history.add(mem)
-                await self._atool_results(mem.tool_calls, mem, abort)
-                if not mem.tool_calls:
-                    return mem
-                next_prompt = None
-                role = "user"
-            raise BudgetExceeded("Agent reached max_turns")
-        except BaseException:
-            self._retain_generation_error()
-            raise
-        finally:
+            loop.close()
             self._finish()

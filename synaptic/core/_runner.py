@@ -116,66 +116,13 @@ async def ainvoke(
     abort=None,
     **kwargs,
 ) -> ResponseMem:
-    check_cancelled(abort)
-    _check(model, "ainvoke", images, audio)
-    if role not in ("user", "assistant", "system"):
-        raise ValueError("Role must be one of 'user', 'assistant', or 'system'")
-
-    tools = list(getattr(model.llm, "synaptic_tools", ()))
-    created = datetime.now().astimezone(timezone.utc)
-    _autorun = autorun if autorun is not None else model.autorun
-    _automem = automem if automem is not None else model.automem
-
-    t0 = time.monotonic()
-    completion = Completion()
-    _attempt.begin(model, prompt, role, images, audio)
-    source = model.llm.astream(prompt=prompt, role=role, images=images, audio=audio, **kwargs)
-    try:
-        async for chunk in source:
-            _attempt.observe(model)
-            completion.add(chunk)
-            check_cancelled(abort)
-    except BaseException as error:
-        memory = completion.memory(created)
-        ExecutionState(memory, abort).interrupt(error)
-        remember(model, memory, _automem, prompt, role, created, images, audio, t0)
-        raise
-    finally:
-        close = getattr(source, "aclose", None)
-        if close:
-            await close()
-    memory = completion.memory(created)
-
-    if _bus.active():
-        _bus.emit(
-            {
-                "type": "model.ainvoke",
-                "provider": str(model.provider),
-                "model": model.model,
-                "prompt": prompt,
-                "role": role,
-                "context": _ctx(model),
-                "response": completion.text,
-                "input_tokens": memory.input_tokens,
-                "output_tokens": memory.output_tokens,
-                "latency_ms": int((time.monotonic() - t0) * 1000),
-            }
-        )
-
-    remember(model, memory, _automem, prompt, role, created, images, audio, t0)
-    with ExecutionState(memory, abort):
-        check_cancelled(abort)
-        if _autorun and memory.tool_calls:
-            await run_tools_async(
-                tools,
-                model.blacklist,
-                memory.tool_calls,
-                getattr(model, "executor", None),
-                memory,
-                abort,
-            )
-
-    return memory
+    """A drained stream: async generation has exactly one implementation."""
+    source = astream(
+        model, prompt, role, images, audio, autorun, automem, abort, operation="ainvoke", **kwargs
+    )
+    async for _ in source:
+        pass
+    return model.last_response
 
 
 def remember(model, memory, automem, prompt, role, created, images, audio, t0=None):

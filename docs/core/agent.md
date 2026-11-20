@@ -26,6 +26,7 @@ Agent(
 - `max_parallel_tools`: concurrency limit for tools marked parallel-safe (see tool guide).
 - `ledger`: a `Ledger` that records every run (see ledger guide).
 - `context`: function choosing what each model call sees (see Context below).
+- `tool_errors`: `"raise"` (default) or `"return"` (see Tool failures below).
 
 - `model`: configured `Model`.
 - `session`: `Session` with isolated history and state.
@@ -169,3 +170,27 @@ tool = subagent("research", "Research a topic", lambda: Agent(make_model(), tool
 ```
 
 Use `sync=True` when the lead runs with `Agent.run`.
+
+## Run modes
+
+`run` is fully synchronous and makes ordinary non-streaming model calls. `astream`
+streams. `arun` is `astream` drained for you: it returns the final response, and
+`text_delta` handlers and signals fire exactly as they do when streaming. All three
+follow one loop, so turn budgets, handoff, context and tool behaviour are identical.
+
+## Tool failures
+
+By default an exception in a tool ends the run; `tool_error` handlers are told first.
+To let the model see the failure and decide what to do next:
+
+```python
+agent = Agent(model, tools=tools, tool_errors="return")
+
+@autotool("Charge a card", errors="raise")      # per-tool override, either direction
+def charge(amount: int) -> str: ...
+```
+
+A returned failure becomes the tool result `{"error": "LookupError: not found"}` in the
+provider's native error form, is journaled as `failed`, and fires `tool_end` like any
+other result. The exception text is sent to the model, so keep secrets out of tool
+errors. Returning does not mean nothing happened: the tool may have acted before failing.

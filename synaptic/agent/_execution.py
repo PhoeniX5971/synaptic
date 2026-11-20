@@ -33,6 +33,14 @@ def execute(agent, call, state=None, abort=None):
     return _timed(agent, call, state, abort)[0]
 
 
+def _failed(agent, call, error):
+    """Error receipt and whether this tool's failures go back to the model."""
+    tool = (getattr(agent, "_turn_tools", None) or agent._registry.all()).get(call.name)
+    mode = (tool.metadata.get("errors") if tool else None) or getattr(agent, "tool_errors", "raise")
+    receipt = {"name": call.name, "call_id": call.id, "error": f"{type(error).__name__}: {error}"}
+    return receipt, mode == "return"
+
+
 def _ms(start):
     return int((time.monotonic() - start) * 1000)
 
@@ -53,16 +61,21 @@ def _timed(agent, call, state=None, abort=None):
     allowed = require_sync(permitted(agent, invocation), "Async permission requires arun()")
     check_cancelled(abort)
     if not allowed:
-        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0
+        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0, "denied"
     executor = getattr(agent, "executor", LocalExecutor())
     admit(executor, invocation)
     start = time.monotonic()
-    with _bus.current().scope(call_id=invocation.call_id):
-        value = require_sync(
-            executor.execute(invocation),
-            "Async executor requires arun()",
-        )
-    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}, _ms(start)
+    try:
+        with _bus.current().scope(call_id=invocation.call_id):
+            value = require_sync(executor.execute(invocation), "Async executor requires arun()")
+    except Exception as error:
+        receipt, returned = _failed(agent, call, error)
+        if returned:
+            return receipt, _ms(start), "failed"
+        agent.events.emit("tool_error", copy.deepcopy(call), _observed(receipt, _ms(start)))
+        raise
+    receipt = {"name": invocation.name, "call_id": invocation.call_id, "result": value}
+    return receipt, _ms(start), "succeeded"
 
 
 async def aexecute(agent, call, state=None, abort=None):
@@ -81,13 +94,21 @@ async def _atimed(agent, call, state=None, abort=None):
         allowed = await allowed
     check_cancelled(abort)
     if not allowed:
-        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0
+        return {"name": call.name, "call_id": call.id, "error": "Permission denied"}, 0, "denied"
     executor = getattr(agent, "executor", LocalExecutor())
     admit(executor, invocation)
     start = time.monotonic()
-    with _bus.current().scope(call_id=invocation.call_id):
-        value = await executor.aexecute(invocation)
-    return {"name": invocation.name, "call_id": invocation.call_id, "result": value}, _ms(start)
+    try:
+        with _bus.current().scope(call_id=invocation.call_id):
+            value = await executor.aexecute(invocation)
+    except Exception as error:
+        receipt, returned = _failed(agent, call, error)
+        if returned:
+            return receipt, _ms(start), "failed"
+        await agent.events.aemit("tool_error", copy.deepcopy(call), _observed(receipt, _ms(start)))
+        raise
+    receipt = {"name": invocation.name, "call_id": invocation.call_id, "result": value}
+    return receipt, _ms(start), "succeeded"
 
 
 from typing import List, Any
@@ -97,6 +118,7 @@ from ..signal.events import ToolCallResult as _SignalTCR
 
 from ._state import AgentState
 from ._parallel import batches, gather
+from ._delegate import abort_scope
 
 
 def _signal(call, result, ms):
@@ -106,14 +128,14 @@ def _signal(call, result, ms):
 class AgentExecution(AgentState):
     def _tool_results(self, calls: List[ToolCall], memory=None, abort=None) -> List[Any]:
         mem = memory if memory is not None else ResponseMem("", None, tool_calls=calls)
-        with ExecutionState(mem, abort) as state:
+        with abort_scope(abort), ExecutionState(mem, abort) as state:
             state.check()
             if memory is not None:
                 self.events.emit("step_end", mem)
                 state.check()
             for call in calls:
-                result, ms = _timed(self, call, state, abort)
-                state.record(call, result, ms)
+                result, ms, status = _timed(self, call, state, abort)
+                state.record(call, result, ms, status)
                 self.events.emit("tool_end", copy.deepcopy(call), _observed(result, ms))
                 state.check()
                 if self.signals:
@@ -124,7 +146,7 @@ class AgentExecution(AgentState):
 
     async def _atool_results(self, calls: List[ToolCall], memory=None, abort=None) -> List[Any]:
         mem = memory if memory is not None else ResponseMem("", None, tool_calls=calls)
-        with ExecutionState(mem, abort) as state:
+        with abort_scope(abort), ExecutionState(mem, abort) as state:
             state.check()
             if memory is not None:
                 await self.events.aemit("step_end", mem)
@@ -133,12 +155,12 @@ class AgentExecution(AgentState):
                 outcomes = await gather(self, batch, lambda c: _atimed(self, c, state, abort))
                 # Receipts are published in call order before any observer or failure.
                 done = [(c, o) for c, o in zip(batch, outcomes) if not isinstance(o, BaseException)]
-                for call, (result, ms) in done:
-                    state.record(call, result, ms)
+                for call, (result, ms, status) in done:
+                    state.record(call, result, ms, status)
                 for outcome in outcomes:
                     if isinstance(outcome, BaseException):
                         raise outcome
-                for call, (result, ms) in done:
+                for call, (result, ms, _) in done:
                     await self.events.aemit(
                         "tool_end", copy.deepcopy(call), _observed(result, ms)
                     )

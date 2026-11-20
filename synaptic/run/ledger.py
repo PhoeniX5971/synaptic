@@ -108,12 +108,18 @@ class Ledger:
             body = {key: result[key] for key in ("result", "error", "latency_ms") if key in result}
             note("tool_end", call_id=call.id, name=call.name, **body)
 
+        def failed(call, result):
+            note("tool_error", call_id=call.id, name=call.name, **{
+                key: result[key] for key in ("error", "latency_ms") if key in result
+            })
+
         previous = agent.ledger
         agent.ledger = self
         subscriptions = [
             agent.events.on("step_end", model),
             agent.events.on("tool_start", started),
             agent.events.on("tool_end", ended),
+            agent.events.on("tool_error", failed),
         ]
 
         def detach():

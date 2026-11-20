@@ -336,3 +336,29 @@ so continuation checks cannot be bypassed by eviction. Pruning runs in
 `enforce_budget()`. The default None keeps the previous unbounded behaviour. The limit
 is serialized as `archive_limit` only when set; restoration lists in-context records
 before out-of-context ones, which does not affect what is prunable.
+
+## One agent loop, returned tool errors and run guards
+
+- `agent/_loop.py` holds the only agent loop, as a plain generator that requests a model
+  call or a tool batch. `Agent.run` drives it synchronously with `Model.invoke`;
+  `Agent.astream` drives it with the streaming runner; `Agent.arun` drains that same
+  driver and returns the final response. `Model.ainvoke` is likewise `astream` drained.
+- Consequences for `arun`: `text_delta` and stream signals now fire; text-mode protocol
+  retries apply; a failure before or during generation leaves the same partial,
+  incomplete response in history that `astream` leaves.
+- `Agent(tool_errors="raise"|"return")`, overridable per tool with `metadata["errors"]`
+  (`autotool(errors=...)`). In `return` mode an `Exception` from the executor becomes the
+  receipt `{"name", "call_id", "error": "<Type>: <message>"}`, journal status `failed`,
+  followed by the normal `tool_end`, signal and log. Cancellation is never converted.
+  Preparation and policy failures still raise.
+- In `raise` mode `tool_error(call, receipt_with_latency)` is emitted before the exception
+  propagates; no receipt is recorded and the call stays `uncertain`.
+- `failed` joins `succeeded` and `denied` as a settled status that reconciliation keeps.
+- A Model drives one agent run at a time. Starting a run, or handing off, onto a Model
+  already driving another agent raises `RuntimeError`.
+- The dispatching agent's `abort` event is visible to delegation tools through a context
+  variable and passed to the delegate's run.
+- `History.effective_mems()` rejects compiler output that is empty, contains non-Memory
+  items (`TypeError`) or contains a tool exchange without all results (`ValueError`).
+- Ledger `input` entries record string media references; replay passes them back.
+- The Claude adapter names tools by `Tool.name`.

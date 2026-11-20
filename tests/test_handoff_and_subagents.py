@@ -84,11 +84,13 @@ def test_factory_subagents_run_in_parallel_with_fresh_sessions():
     def factory():
         model = named(make_model([], []), "worker")
 
-        async def slow(prompt, **kwargs):
-            await asyncio.sleep(0.05)
-            return ResponseMem(f"done {len(made)}", None)
+        async def slow(**kwargs):
+            from synaptic import ResponseChunk
 
-        model.ainvoke = slow
+            await asyncio.sleep(0.05)
+            yield ResponseChunk(f"done {len(made)}", is_final=True)
+
+        model.llm.astream = slow
         made.append(Agent(model))
         return made[-1]
 
@@ -113,11 +115,12 @@ def test_cancelling_the_parent_cancels_the_delegate():
         model = named(make_model([], []), "worker")
         state = {}
 
-        async def hang(prompt, **kwargs):
+        async def hang(**kwargs):
             state["started"] = True
             await asyncio.sleep(10)
+            yield None
 
-        model.ainvoke = hang
+        model.llm.astream = hang
         worker = Agent(model)
         tool = worker.as_tool("work", "Work")
         lead = Agent(make_model([tool], [ToolCall("work", {"task": "t"}, id="d1")]), tools=[tool])

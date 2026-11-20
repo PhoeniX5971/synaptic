@@ -22,7 +22,7 @@ assert_type(ledger.fork(0), Ledger)
 assert_type(ledger.append("note"), dict[str, Any])
 assert_type(Session.from_dict(session.to_dict()), Session)
 assert_type(History(archive_limit=5).archive_limit, int | None)
-controlled = Agent(model, session=session, ledger=ledger, max_parallel_tools=2)
+controlled = Agent(model, session=session, ledger=ledger, max_parallel_tools=2, tool_errors="return")
 controlled.handoff(model)
 assert_type(controlled.task, dict[str, Any])
 assert_type(controlled.as_tool("worker", "Work"), Tool)
@@ -62,6 +62,7 @@ INVALID = [
     'agent.as_tool(42, "Work")',
     'Session.from_dict(42)',
     'Agent(model, max_parallel_tools="all")',
+    'Agent(model, tool_errors=42)',
     'model.invoke("hello").latency_ms + 1',
 ]
 

@@ -22,6 +22,8 @@ class Model(ModelAPI, ModelBindings):
     loop that continues after tools return results.
     """
 
+    _agent_run: Any = None  # The Agent currently driving this model, if any.
+
     def __init__(
         self,
         provider: Provider,

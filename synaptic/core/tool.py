@@ -160,6 +160,7 @@ def autotool(
     autobind: bool = True,
     registry: Optional[ToolRegistry] = None,
     parallel: bool = False,
+    errors: Optional[str] = None,
 ) -> Callable:
     """Decorate a function as a `Tool` with an inferred parameter schema."""
     param_descriptions = param_descriptions or {}
@@ -180,7 +181,7 @@ def autotool(
             registry=registry,
             input_model=model,
             output_adapter=output,
-            metadata={"parallel": True} if parallel else None,
+            metadata={**({"parallel": True} if parallel else {}), **({"errors": errors} if errors else {})},
         )
 
     return decorator

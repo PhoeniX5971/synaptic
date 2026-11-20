@@ -81,11 +81,13 @@ class ExecutionState:
             )
         return replace(invocation, _dispatch=Dispatch(self, invocation.call_id))
 
-    def record(self, call, result, latency_ms=None):
+    def record(self, call, result, latency_ms=None, status=None):
         with self._lock:
             # Persist before observers or another call can fail.
             self.memory.tool_results.append(copy.deepcopy(result))
-            self.calls[call.id]["status"] = "succeeded" if "result" in result else "denied"
+            self.calls[call.id]["status"] = status or (
+                "succeeded" if "result" in result else "denied"
+            )
             if latency_ms is not None:
                 self.calls[call.id]["latency_ms"] = latency_ms
             self._publish()
