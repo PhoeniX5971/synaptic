@@ -39,6 +39,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         max_protocol_retries: int = 2,
         executor=None,
         policy_required: bool = False,
+        max_parallel_tools: int = 1,
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -48,7 +49,7 @@ class Agent(AgentStream, _execution.AgentExecution):
             )
         self.model = model
         self.session = session or Session()
-        self.max_turns = max_turns
+        self.max_turns, self.max_parallel_tools = max_turns, max(1, max_parallel_tools)
         self.permission = permission
         self.executor, self.policy_required = executor or LocalExecutor(), policy_required
         self.events = events or EventBus()

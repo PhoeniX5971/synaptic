@@ -22,6 +22,7 @@ class AgentState:
     _base_instructions: str
     _dsl_parser: DSLParser | None
     max_turns: int
+    max_parallel_tools: int = 1
     max_protocol_retries: int
 
     def _retain_generation_error(self):

@@ -2,6 +2,7 @@
 
 ## Unreleased — integration qualification
 
+- Opt-in parallel tool dispatch: `autotool(parallel=True)` with `Agent(max_parallel_tools=N)`.
 - `tool_end`, `ToolCallResult`, the execution journal and `agent.tool` logs report
   executor-only `latency_ms`; provider-visible receipts are unchanged.
 - Tool results reach each provider in its native form from one uniform receipt: value-only

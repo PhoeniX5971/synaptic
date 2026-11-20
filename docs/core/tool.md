@@ -100,3 +100,21 @@ Tool arguments, tool results and structured output are serialized for providers 
 non-ASCII text kept literal (`ensure_ascii=False`), so Arabic and other non-Latin text
 is not expanded into `\uXXXX` escapes. Call `synaptic.set_ensure_ascii(True)` once at
 startup only if an endpoint requires ASCII-only JSON text.
+
+## Parallel-safe tools
+
+Tools run one at a time unless you opt in on both sides:
+
+```python
+@autotool("Fetch a URL", parallel=True)
+async def fetch(url: str) -> str: ...
+
+agent = Agent(model, tools=[fetch], max_parallel_tools=4)
+await agent.arun("Compare these three pages ...")
+```
+
+Mark a tool `parallel=True` (or `Tool(..., metadata={"parallel": True})`) only when
+concurrent calls cannot interfere with each other. Consecutive marked calls in one model
+response run together, up to `max_parallel_tools`; an unmarked call is a barrier that runs
+alone, in order. Synchronous tool functions overlap only when the executor has a
+scheduler, e.g. `LocalExecutor(ThreadScheduler(...))`; otherwise they block the loop.

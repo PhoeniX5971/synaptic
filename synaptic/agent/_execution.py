@@ -96,6 +96,7 @@ from ..signal.events import ToolCallResult as _SignalTCR
 
 
 from ._state import AgentState
+from ._parallel import batches, gather
 
 
 def _signal(call, result, ms):
@@ -128,15 +129,24 @@ class AgentExecution(AgentState):
             if memory is not None:
                 await self.events.aemit("step_end", mem)
                 state.check()
-            for call in calls:
-                result, ms = await _atimed(self, call, state, abort)
-                state.record(call, result, ms)
-                await self.events.aemit("tool_end", copy.deepcopy(call), _observed(result, ms))
-                state.check()
-                if self.signals:
-                    await self.signals.aemit("ToolCallResult", _signal(call, result, ms))
-                self._log_tool(call, result, ms)
-                state.check()
+            for batch in batches(self, calls):
+                outcomes = await gather(self, batch, lambda c: _atimed(self, c, state, abort))
+                # Receipts are published in call order before any observer or failure.
+                done = [(c, o) for c, o in zip(batch, outcomes) if not isinstance(o, BaseException)]
+                for call, (result, ms) in done:
+                    state.record(call, result, ms)
+                for outcome in outcomes:
+                    if isinstance(outcome, BaseException):
+                        raise outcome
+                for call, (result, ms) in done:
+                    await self.events.aemit(
+                        "tool_end", copy.deepcopy(call), _observed(result, ms)
+                    )
+                    state.check()
+                    if self.signals:
+                        await self.signals.aemit("ToolCallResult", _signal(call, result, ms))
+                    self._log_tool(call, result, ms)
+                    state.check()
         return mem.tool_results
 
     def _log_tool(self, call, result, latency_ms):

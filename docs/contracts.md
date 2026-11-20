@@ -273,3 +273,17 @@ is meant to be used, and correlation travels only in the provider's own call-ID 
 - Synchronous agent runs emit the `ToolCallResult` signal like async runs. Signal
   handlers on that path must be synchronous. `ToolCallResult.error` carries the receipt's
   error message, or None.
+
+## Parallel tool dispatch (T-014)
+
+- Opt-in twice: the tool carries `metadata["parallel"]` and the Agent has
+  `max_parallel_tools > 1`. Default behaviour is unchanged sequential dispatch.
+- Applies to `Agent.arun`/`astream`. `Agent.run` and Model one-shot dispatch stay sequential.
+- Consecutive marked calls form a batch bounded by a semaphore; unmarked, unknown or
+  blacklisted calls run alone and separate batches.
+- Receipts are appended in call order after the batch settles, never completion order,
+  so positional and call-ID correlation both hold. `tool_end`, signals and logs follow
+  in call order. `tool_start` observers and permission policy run concurrently per call.
+- If a call fails, its siblings run to completion and their receipts are recorded; the
+  failed call is journaled `uncertain`, the response is marked incomplete and the first
+  failure in call order is raised. Cancelling the run cancels the whole batch.
