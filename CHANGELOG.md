@@ -2,6 +2,7 @@
 
 ## Unreleased — integration qualification
 
+- `History.from_exchanges(pairs, room=N)` rebuilds a history from saved question/answer pairs.
 - `Agent(retry=RetryPolicy(...))` repeats model calls that fail before any output; broken-connection transport errors count as temporary.
 - `Skills` extension: on-demand, composable instruction-and-tool bundles with optional per-skill final results.
 - `Todos` extension: a todo list with required items that gate finishing; cache-friendly placement by default.

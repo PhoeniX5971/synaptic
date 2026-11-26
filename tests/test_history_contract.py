@@ -100,3 +100,22 @@ def test_provider_history_preserves_native_ids_and_supported_images(provider):
         result = history_messages(history)
         assert result[1].tool_calls[0].id == result[2].tool_call_id == "native-id"
         assert len(result[0].content) == 2
+
+
+def test_history_from_saved_exchanges():
+    pairs = [("first?", "one"), ("unanswered?", ""), ("", "orphan answer"), ("last?", None)]
+    history = History.from_exchanges(pairs, room=2)
+    assert [(type(m).__name__, m.message) for m in history.entries] == [
+        ("UserMem", "first?"),
+        ("ResponseMem", "one"),
+        ("UserMem", "unanswered?"),
+        ("ResponseMem", "orphan answer"),
+        ("UserMem", "last?"),
+    ]
+    assert history.size == 7
+    assert History.from_exchanges([]).size == 1 and History.from_exchanges(pairs, size=3).size == 3
+    assert History.from_exchanges(pairs, dedup_tools=True).dedup_tools is True
+    restored = History.from_dict(json.loads(json.dumps(history.to_dict())))
+    assert [m.message for m in restored.entries] == [m.message for m in history.entries]
+    with pytest.raises(ValueError, match="room"):
+        History.from_exchanges(pairs, room=-1)

@@ -1,6 +1,7 @@
 """Transient classification and finite retry timing independent of tool effects."""
 
 import math
+from typing import Any, Callable, Optional
 import random
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -12,7 +13,7 @@ from email.utils import parsedate_to_datetime
 _TRANSIENT_TYPES = {"APIConnectionError", "APITimeoutError", "RateLimitError", "TransportError"}
 
 
-def transient(error):
+def transient(error: BaseException) -> bool:
     """Whether an error is a temporary connection, timeout, rate or server failure.
 
     A status-less SDK `APIError` (an error event sent inside a stream) is not treated
@@ -49,16 +50,16 @@ def retry_after(error):
 class RetryPolicy:
     def __init__(
         self,
-        retries=3,
-        delay=0.5,
+        retries: int = 3,
+        delay: float = 0.5,
         *,
-        multiplier=2.0,
-        max_delay=30.0,
-        jitter=0.2,
-        deadline=60.0,
-        exceptions=None,
-        predicate=None,
-    ):
+        multiplier: float = 2.0,
+        max_delay: float = 30.0,
+        jitter: float = 0.2,
+        deadline: float = 60.0,
+        exceptions: Any = None,
+        predicate: Optional[Callable[[BaseException], bool]] = None,
+    ) -> None:
         if isinstance(retries, bool) or not isinstance(retries, int) or retries < 0:
             raise ValueError("max_retries must be a nonnegative integer")
         if any(not math.isfinite(v) for v in (delay, multiplier, max_delay, jitter, deadline)):

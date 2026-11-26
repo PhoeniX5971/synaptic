@@ -120,6 +120,13 @@ class History:
     def from_dict(cls, value: dict[str, Any]) -> "History":
         return _history_io.deserialize(value)
 
+    @classmethod
+    def from_exchanges(
+        cls, exchanges, size: Optional[int] = None, room: int = 0, **options
+    ) -> "History":
+        """Build a history from saved (question, answer) pairs; see the memory guide."""
+        return _history_io.from_exchanges(cls, exchanges, size, room, options)
+
     def effective_mems(self) -> List[Memory]:
         """Provider context: budgeted entries, deduplicated, then compiled if configured."""
         mems = self._effective()

@@ -8,6 +8,8 @@ import sys
 VALID = """from typing import Any, assert_type, Literal
 from synaptic import Model, Provider, History, ResponseMem, ResponseChunk, Agent, ContentBlock, ToolCall
 from synaptic import ToolCallResult, set_ensure_ascii, Ledger, Session, Tool, subagent
+from synaptic import FinalAnswer, Skill, Skills, Todo, Todos
+from synaptic.run import RetryPolicy
 
 history = History(size=20)
 model = Model(Provider.OPENAI, "fixture", history=history, autorun=False, enforce_schema=True)
@@ -24,6 +26,16 @@ assert_type(Session.from_dict(session.to_dict()), Session)
 assert_type(History(archive_limit=5).archive_limit, int | None)
 controlled = Agent(model, session=session, ledger=ledger, max_parallel_tools=2, tool_errors="return")
 controlled.handoff(model)
+extended = Agent(
+    model,
+    extensions=[Todos([Todo("step", required=True)]), Skills([Skill("a", "b")]), FinalAnswer({})],
+    retry=RetryPolicy(retries=2),
+)
+extended.add_tools(extended.as_tool("worker", "Work"))
+extended.finish({"done": True})
+assert_type(extended.blockers(), list[str])
+assert_type(extended.instructions, str)
+assert_type(History.from_exchanges([("q", "a")], room=2), History)
 assert_type(controlled.task, dict[str, Any])
 assert_type(controlled.as_tool("worker", "Work"), Tool)
 assert_type(subagent("worker", "Work", controlled), Tool)
@@ -64,6 +76,9 @@ INVALID = [
     'Agent(model, max_parallel_tools="all")',
     'Agent(model, tool_errors=42)',
     'Model(Provider.OPENAI, "fixture", enforce_schema="yes")',
+    'Skill("only-a-name")',
+    'agent.add_tools(42)',
+    'History.from_exchanges([], room="some")',
     'model.invoke("hello").latency_ms + 1',
 ]
 

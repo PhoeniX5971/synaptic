@@ -80,3 +80,22 @@ def deserialize(data):
             raise ValueError("Failed generation attempts must be response records")
         history.failed_attempts.append(memory)
     return history
+
+
+def from_exchanges(cls, exchanges, size, room, options):
+    """Entries for each pair in order; an empty question or answer adds no entry.
+
+    Without `size`, the window holds every entry plus `room` more before trimming.
+    """
+    from .memory import ResponseMem, UserMem
+
+    entries: list = []
+    for question, answer in exchanges:
+        if question:
+            entries.append(UserMem(question, None))
+        if answer:
+            entries.append(ResponseMem(answer, None))
+    if room < 0:
+        raise ValueError("room must be nonnegative")
+    window = size if size is not None else max(1, len(entries) + room)
+    return cls(entries, size=window, **options)

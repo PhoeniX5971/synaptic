@@ -44,6 +44,19 @@ history.add(UserMem("hello", created=created))
 
 When more than `size` entries exist, old entries are dropped.
 
+## From saved question/answer pairs
+
+```python
+history = History.from_exchanges([("What is X?", "X is ..."), ("And Y?", "Y is ...")], room=20)
+```
+
+Each pair becomes a user entry and an assistant entry, in order; an empty question or
+answer adds no entry. Without `size`, the window is sized to hold every entry plus
+`room` more before it starts trimming. Other `History` options can be passed as keywords.
+A history owns its entries and is bound to the model or agent that uses it, so build one
+per model or agent rather than sharing an instance. For new code, saving
+`session.to_dict()` keeps tool calls, results and extension state as well.
+
 ## Archive limit
 
 Besides the context window, a history keeps tool exchanges that left the window
