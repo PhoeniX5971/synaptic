@@ -399,3 +399,17 @@ before out-of-context ones, which does not affect what is prunable.
   returned: an unknown or blacklisted tool name and arguments that fail validation
   become `failed` error receipts with no `tool_start`. Policy failures still raise.
 - Text/signal mode is unsupported for extensions.
+
+## Todo lists
+
+- `Todos` state is `Session.extensions["todos"] = {"items": [...], "next": n}`; items are
+  dicts with `id`, `text`, `required`, `status`, `note`, `skippable`. Constructor items
+  get ids `r1..rN` (or their own `id`); model-added items get `t1..`. Seeding skips ids
+  already present, so restoring does not duplicate or reset items.
+- `before_finish` refuses while any required item is neither `done` nor `skipped`, for
+  plain-text endings and final-tool calls alike. Skipping a required item needs
+  `skippable=True`. Tool misuse (unknown id, invalid status, forbidden skip) is returned
+  to the model as an error.
+- `placement="message"` appends one `user` message through the context projection on
+  every request; `"instructions"` appends the rendered list to the instructions. The
+  list is never written to history in either mode.

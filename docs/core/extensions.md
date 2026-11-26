@@ -52,6 +52,36 @@ result.output_name   # "final_answer"
 
 Any tool can end a run the same way by calling `agent.finish(output)`.
 
+## Todo lists
+
+`Todos` gives the agent a plan it maintains with three tools (`todo_add`, `todo_update`,
+`todo_list`). Items you pass in can be required: the run cannot finish until they are done.
+
+```python
+todos = Todos([
+    Todo("Check against the library", required=True),
+    Todo("Confirm jurisdiction", required=True, skippable=True),
+])
+agent = Agent(model, extensions=[todos, FinalAnswer(Report)])
+```
+
+- Statuses are `open`, `in_progress`, `done` and `skipped`. A required item can only be
+  skipped if it was created with `skippable=True`.
+- Items the model adds itself are never required.
+- If the model tries to finish with a required item open, whether by plain text or by a
+  final-answer tool, it is told which items are open and the run continues. If
+  `max_turns` runs out, `BudgetExceeded` is raised as usual and `todos.open_required()`
+  (or `session.extensions["todos"]`) shows what was left.
+- Events: `todo_added` and `todo_updated`, each with the full item as a dict.
+- The list is saved with the session. Pass the same `Todos([...])` again when restoring;
+  items already on the session keep their status and are not duplicated.
+
+**Where the model sees the list.** By default (`placement="message"`) the current list
+is added as the last message of every request. It is not stored in history and the
+system prompt does not change, so provider prompt caching of a large system prompt keeps
+working. `Todos(items, placement="instructions")` puts it at the end of the system
+prompt instead, which changes that prompt whenever the list changes.
+
 ## Events from inside a tool
 
 `agent.events` is the public `EventBus`; subscribe with `agent.on(name, handler)`.
