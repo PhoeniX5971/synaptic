@@ -43,6 +43,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         ledger=None,
         context=None,
         tool_errors: str = "raise",
+        extensions=None,
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -77,6 +78,9 @@ class Agent(AgentStream, _execution.AgentExecution):
         if tool_errors not in ("raise", "return"):
             raise ValueError("tool_errors must be raise or return")
         self.context, self.tool_errors = context, tool_errors
+        self.extensions, self._outbox = tuple(extensions or ()), []
+        for extension in self.extensions:
+            extension.attach(self)
         if ledger is not None:
             ledger.attach(self)
 
@@ -91,8 +95,10 @@ class Agent(AgentStream, _execution.AgentExecution):
     def _prepare_turn(self):
         self._turn_hook()
         self.model.last_response = None
-        self._turn_tools = self._registry.all()
+        self._turn_tools = {**self._registry.all(), **self._extension_tools()}
         if not self._text_mode:
+            if self.extensions or self._owns_instructions:
+                self.model.instructions = self._compose()
             if hasattr(self.model, "unbind_tools"):
                 self.model.unbind_tools(*self._managed_names)
                 self.model.bind_tools(list(self._turn_tools.values()), replace=True)
@@ -161,8 +167,13 @@ class Agent(AgentStream, _execution.AgentExecution):
                 else:
                     self._tool_results(step[1].tool_calls, step[1], abort)
                     reply = None
+                    while self._outbox:
+                        event, args = self._outbox.pop(0)
+                        self.events.emit(event, *args)
                 step = loop.send(reply)
         except StopIteration as finished:
+            if finished.value.output_name:
+                self.events.emit("final", finished.value.output_name, finished.value.output)
             return finished.value
         except BaseException:
             self._retain_generation_error()

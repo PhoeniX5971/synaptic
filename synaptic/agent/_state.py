@@ -31,6 +31,7 @@ class AgentState:
     _base_instructions: str
     _dsl_parser: DSLParser | None
     max_turns: int
+    _turn_tools: dict
     max_parallel_tools: int = 1
     max_protocol_retries: int
 

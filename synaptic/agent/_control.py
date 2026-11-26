@@ -8,12 +8,12 @@ from ..logging import _bus
 from ..signal.collector import SignalMode, needs_text_mode
 from ..signal.dsl import build_dsl_instructions
 from ._delegate import subagent
-from ._state import AgentState
+from ._extend import AgentExtensible
 
 ContextCompiler = Callable[[List[Memory], Dict[str, Any]], List[Memory]]
 
 
-class AgentControl(AgentState):
+class AgentControl(AgentExtensible):
     context: Optional[ContextCompiler] = None
     _signal_mode: SignalMode = SignalMode.NONE
     _handoff: Any = None
@@ -43,9 +43,11 @@ class AgentControl(AgentState):
         target, self._handoff = self._handoff, None
         if target is not None and target is not self.model:
             self._switch(target)
-        if self.context is not None:
+        if self.context is not None or self.extensions:
             compiler, session = self.context, self.session
-            session.history.compiler = lambda mems: compiler(mems, session.task)
+            session.history.compiler = lambda mems: self._project(
+                compiler(mems, session.task) if compiler else mems
+            )
 
     def _switch(self, target) -> None:
         if getattr(target, "_operation_owner", None) is not None:

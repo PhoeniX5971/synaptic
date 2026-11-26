@@ -18,9 +18,11 @@ class Session:
     outcome: str | None = None
     # Canonical task facts, kept apart from the conversation. JSON-compatible values.
     task: Dict[str, Any] = field(default_factory=dict)
+    # Per-extension state, keyed by extension name. JSON-compatible values.
+    extensions: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        saved = {
             "version": 1,
             "id": self.id,
             "history": self.history.to_dict(),
@@ -28,6 +30,9 @@ class Session:
             "task": copy.deepcopy(self.task),
             "outcome": self.outcome,
         }
+        if self.extensions:  # Optional key: absent for sessions that use no extension.
+            saved["extensions"] = copy.deepcopy(self.extensions)
+        return saved
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "Session":
@@ -40,6 +45,7 @@ class Session:
             metadata=copy.deepcopy(value.get("metadata", {})),
             outcome=value.get("outcome"),
             task=copy.deepcopy(value.get("task", {})),
+            extensions=copy.deepcopy(value.get("extensions", {})),
         )
 
     def reset(self) -> None:

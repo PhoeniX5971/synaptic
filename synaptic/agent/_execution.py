@@ -59,7 +59,13 @@ def _observed(result, latency_ms):
 def _timed(agent, call, state=None, abort=None):
     """Return the receipt and executor-only latency; policy and observer time is excluded."""
     check_cancelled(abort)
-    invocation = prepare(agent, call)
+    try:
+        invocation = prepare(agent, call)
+    except Exception as error:  # Unknown tool or invalid arguments: no effect started.
+        receipt, returned = _failed(agent, call, error)
+        if not returned:
+            raise
+        return receipt, 0, "failed"
     if state:
         invocation = state.bind(invocation)
     agent.events.emit("tool_start", copy.deepcopy(call))
@@ -90,7 +96,13 @@ async def aexecute(agent, call, state=None, abort=None):
 
 async def _atimed(agent, call, state=None, abort=None):
     check_cancelled(abort)
-    invocation = prepare(agent, call)
+    try:
+        invocation = prepare(agent, call)
+    except Exception as error:
+        receipt, returned = _failed(agent, call, error)
+        if not returned:
+            raise
+        return receipt, 0, "failed"
     if state:
         invocation = state.bind(invocation)
     await agent.events.aemit("tool_start", copy.deepcopy(call))

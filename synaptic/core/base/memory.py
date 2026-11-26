@@ -2,7 +2,7 @@ import copy
 import json
 import warnings
 from weakref import WeakSet
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from ..tool import ToolCall
 from .content import ContentBlock
@@ -66,6 +66,9 @@ class ResponseMem(Memory):
         self.finish_reason = normalize_finish(finish_reason, self.extensions)
         # Model-call duration set by the runner; observational, not serialized.
         self.latency_ms: Optional[int] = None
+        # Result and name of the tool that ended an agent run, if one did.
+        self.output: Any = None
+        self.output_name: Optional[str] = None
 
     @property
     def tool_outcomes(self) -> dict:

@@ -62,9 +62,16 @@ class AgentStream(AgentControl):
                 else:
                     await self._atool_results(step[1].tool_calls, step[1], abort)
                     reply = None
+                    while self._outbox:
+                        event, args = self._outbox.pop(0)
+                        await self.events.aemit(event, *args)
                 step = loop.send(reply)
         except StopIteration as finished:
-            done.append(finished.value)
+            done.append(result := finished.value)
+            if result.output_name:
+                await self.events.aemit("final", result.output_name, result.output)
+                extra = {"output_name": result.output_name, "output": result.output}
+                yield ResponseChunk("", is_final=True, extensions=extra)
         finally:
             loop.close()
 
@@ -72,8 +79,8 @@ class AgentStream(AgentControl):
         completion, final_seen = Completion(), False
         created = datetime.now().astimezone(timezone.utc)
         if self._text_mode:
-            self.model.instructions = self._base_instructions + build_dsl_instructions(
-                self._registry.all().values()
+            self.model.instructions = self._compose() + build_dsl_instructions(
+                self._turn_tools.values()
             )
         source = model_stream(
             self.model, prompt=None, role=role, abort=abort, autorun=False, automem=False, **kwargs
