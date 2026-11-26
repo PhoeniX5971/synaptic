@@ -12,7 +12,8 @@ new to the framework:
 7. [`core/streaming-events.md`](core/streaming-events.md)
 8. [`core/flows.md`](core/flows.md)
 9. [`core/ledger.md`](core/ledger.md)
-10. [`providers/index.md`](providers/index.md)
+10. [`core/extensions.md`](core/extensions.md)
+11. [`providers/index.md`](providers/index.md)
 
 Provider-specific notes:
 

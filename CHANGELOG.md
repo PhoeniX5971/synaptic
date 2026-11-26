@@ -2,6 +2,7 @@
 
 ## Unreleased — integration qualification
 
+- Extension seam (`Agent(extensions=...)`, `Extension`), runtime `add_tools`/`remove_tools`/`instructions`, and `FinalAnswer` run-ending structured results.
 - `Model(enforce_schema=True)` sends `json_schema` on OpenAI-compatible servers such as vLLM.
 - Model diagnostic events share a `model_call_id`; `model.stream.end` includes the prompt.
 - One agent loop behind `run`, `arun` and `astream`; `arun` and `Model.ainvoke` are drained streams.

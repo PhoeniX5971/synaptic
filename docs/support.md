@@ -29,7 +29,8 @@ Package version ranges are not a support claim.
 
 Introduced together and not yet exercised by production consumers or live providers:
 the run ledger and replay, model handoff, subagents, context compilers, task state,
-parallel tool dispatch and returned tool errors. They are tested, but treat their
+parallel tool dispatch, returned tool errors, and the extension seam with final
+answers, todos and skills. They are tested, but treat their
 interfaces as subject to change until they have real use. Model, tools, history,
 events and the provider adapters are the established core.
 

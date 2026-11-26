@@ -180,3 +180,12 @@ isolated target, so run it with that host rather than a bare core-only Python in
   `enforce_schema=True`. Adapter subclasses of `OpenAIAdapter` that relied on getting
   `json_object` automatically now inherit `enforce_schema = True` and should set it False.
 - Diagnostic events gain `model_call_id`; `model.stream.end` gains `prompt` and `role`.
+
+## Extensions and returned preparation errors
+
+- New and opt-in: `Agent(extensions=...)`, `FinalAnswer`, `Extension`, `agent.add_tools`,
+  `remove_tools`, `instructions`, `finish`, `notify`. `Session.to_dict()` gains an
+  `extensions` key only when an extension stored state.
+- Behaviour change for `tool_errors="return"` (introduced one release ago): a call to an
+  unknown tool, or with arguments that fail validation, is now returned to the model
+  instead of raising. The default `"raise"` mode is unchanged.

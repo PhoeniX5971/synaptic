@@ -373,3 +373,29 @@ before out-of-context ones, which does not affect what is prunable.
   the start, chunk and end events of one stream. It survives event truncation.
 - `model.stream.end` additionally carries `prompt` and `role`; payload fields remain
   subject to the bus `payloads` setting.
+
+## Extension seam, runtime API and final answers
+
+- `Agent(extensions=[...])` attaches `Extension` instances (one agent each). Per turn the
+  agent merges their `tools()` over the registry's tools, sets the model instructions to
+  the base text plus each `instructions()` joined by blank lines, and applies each
+  `context()` after any `Agent(context=...)` compiler. Per-extension state lives in
+  `Session.extensions[name]` and is serialized only when non-empty (session version 1).
+- `model.instructions` is managed by the agent only when it has extensions or
+  `agent.instructions` was assigned; otherwise direct assignments to the model persist.
+- `agent.add_tools`/`remove_tools` act on the agent's registry. `agent.finish(output,
+  name, data)` requests the run to end after the current tool batch; `agent.notify`
+  queues events delivered after the batch; `agent.pending_calls` lists the calls of the
+  response being dispatched; `agent.blockers(final)` collects refusal messages.
+- Loop order after a tool batch: a requested finish ends the run; otherwise tool calls
+  continue it; otherwise extension refusals are added as one `user` message and the run
+  continues; otherwise it ends. Refusals use the normal turn budget.
+- `FinalAnswer` validates in two places: the declared schema at preparation and the
+  Pydantic class inside the tool. Its tool always returns errors to the model. A valid
+  call records the receipt `"accepted"`, so the exchange is complete, then ends the run.
+  `ResponseMem.output`/`output_name` are set on the returned response and not serialized;
+  the JSON form is `Session.extensions["final"]`.
+- With `tool_errors="return"` (or a tool marked so), preparation failures are now also
+  returned: an unknown or blacklisted tool name and arguments that fail validation
+  become `failed` error receipts with no `tool_start`. Policy failures still raise.
+- Text/signal mode is unsupported for extensions.
