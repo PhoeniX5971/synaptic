@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
+
+from ..logging import _bus
 from .events import EventBus
 from .session import Session
 from ..core.tool import ToolRegistry
@@ -37,6 +40,34 @@ class AgentState:
 
     ledger = None  # Optional run ledger; see synaptic.run.Ledger.attach.
     tool_errors: str = "raise"
+    retry = None  # Optional RetryPolicy for model calls that fail before any output.
+
+    def _retry_pause(self, error, emitted: bool, attempt: int, started: float):
+        """Seconds to wait before repeating a model call, or None when it must not repeat."""
+        policy = self.retry
+        if policy is None or emitted or not isinstance(error, Exception):
+            return None
+        pause = policy.pause(attempt, error, policy.deadline - (time.monotonic() - started))
+        if pause is not None:
+            detail = {"attempt": attempt + 1, "error": type(error).__name__}
+            _bus.emit({"type": "agent.retry", "session_id": self.session.id, **detail})
+            self._note("retry", **detail)
+        return pause
+
+    def _invoke(self, role, abort, kwargs):
+        """Synchronous model step; nothing is visible until it returns, so it may repeat."""
+        started, attempt = time.monotonic(), 0
+        while True:
+            try:
+                return self.model.invoke(
+                    None, role=role, autorun=False, automem=False, abort=abort, **kwargs
+                )
+            except Exception as error:
+                pause = self._retry_pause(error, False, attempt, started)
+                if pause is None:
+                    raise
+                time.sleep(pause)
+                attempt += 1
 
     def _claim(self, model) -> None:
         """One agent run per Model: a nested run on the same Model would swap its history."""

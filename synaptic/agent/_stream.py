@@ -1,6 +1,7 @@
 """Streaming driver for the agent loop; `arun` is this stream, drained."""
 
 import asyncio
+import time
 from datetime import datetime, timezone
 from typing import AsyncIterator, Optional
 
@@ -76,35 +77,45 @@ class AgentStream(AgentControl):
             loop.close()
 
     async def _model_step(self, role, abort, holder, kwargs):
-        completion, final_seen = Completion(), False
-        created = datetime.now().astimezone(timezone.utc)
-        if self._text_mode:
-            self.model.instructions = self._compose() + build_dsl_instructions(
-                self._turn_tools.values()
+        started, attempt = time.monotonic(), 0
+        while True:
+            completion, final_seen, emitted, pause = Completion(), False, False, None
+            created = datetime.now().astimezone(timezone.utc)
+            if self._text_mode:
+                self.model.instructions = self._compose() + build_dsl_instructions(
+                    self._turn_tools.values()
+                )
+            source = model_stream(
+                self.model, prompt=None, role=role, abort=abort, autorun=False, automem=False, **kwargs
             )
-        source = model_stream(
-            self.model, prompt=None, role=role, abort=abort, autorun=False, automem=False, **kwargs
-        )
-        if self.signals:
-            source = _signal_collect(source, self.signals, self._text_mode, self._dsl_parser)
-        try:
-            async for chunk in source:
-                if abort and abort.is_set():
-                    raise asyncio.CancelledError()
-                completion.add(chunk)
-                final_seen = final_seen or bool(chunk.final)
-                if not chunk.is_final and chunk.text:
-                    await self.events.aemit("text_delta", chunk.text)
-                yield chunk
-        except BaseException as error:
-            partial = completion.memory(created)
-            ExecutionState(partial, abort).interrupt(error)
-            self.session.history.add(partial)
-            raise
-        finally:
-            close = getattr(source, "aclose", None)
-            if close:
-                await close()
+            if self.signals:
+                source = _signal_collect(source, self.signals, self._text_mode, self._dsl_parser)
+            try:
+                async for chunk in source:
+                    emitted = True
+                    if abort and abort.is_set():
+                        raise asyncio.CancelledError()
+                    completion.add(chunk)
+                    final_seen = final_seen or bool(chunk.final)
+                    if not chunk.is_final and chunk.text:
+                        await self.events.aemit("text_delta", chunk.text)
+                    yield chunk
+            except BaseException as error:
+                # Only a call that produced nothing may be repeated; output is never replayed.
+                pause = self._retry_pause(error, emitted, attempt, started)
+                if pause is None:
+                    partial = completion.memory(created)
+                    ExecutionState(partial, abort).interrupt(error)
+                    self.session.history.add(partial)
+                    raise
+            finally:
+                close = getattr(source, "aclose", None)
+                if close:
+                    await close()
+            if pause is None:
+                break
+            await asyncio.sleep(pause)
+            attempt += 1
         memory = completion.memory(created)
         memory.latency_ms = getattr(self.model.last_response, "latency_ms", None)
         holder.append((memory, final_seen))

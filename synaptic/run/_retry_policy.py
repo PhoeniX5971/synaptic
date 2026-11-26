@@ -6,7 +6,18 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 
 
+# Matched by class name anywhere in the MRO, so no SDK or HTTP library is imported here.
+# TransportError is the httpx base for connections and streams that break or time out;
+# SDKs let it through unwrapped once a stream is being read.
+_TRANSIENT_TYPES = {"APIConnectionError", "APITimeoutError", "RateLimitError", "TransportError"}
+
+
 def transient(error):
+    """Whether an error is a temporary connection, timeout, rate or server failure.
+
+    A status-less SDK `APIError` (an error event sent inside a stream) is not treated
+    as temporary: it can also report a permanent server-side failure.
+    """
     status = getattr(error, "status_code", None)
     if status is None:
         status = getattr(getattr(error, "response", None), "status_code", None)
@@ -15,7 +26,7 @@ def transient(error):
         or status in (408, 429)
         or isinstance(status, int)
         and 500 <= status < 600
-        or type(error).__name__ in {"APIConnectionError", "APITimeoutError", "RateLimitError"}
+        or bool(_TRANSIENT_TYPES & {cls.__name__ for cls in type(error).__mro__})
     )
 
 

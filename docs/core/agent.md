@@ -195,3 +195,8 @@ A returned failure becomes the tool result `{"error": "LookupError: not found"}`
 provider's native error form, is journaled as `failed`, and fires `tool_end` like any
 other result. The exception text is sent to the model, so keep secrets out of tool
 errors. Returning does not mean nothing happened: the tool may have acted before failing.
+
+## Retrying model calls
+
+`Agent(model, retry=RetryPolicy(...))` repeats a model call that failed before
+producing any output. See [retry policy](../retry-policy.md).

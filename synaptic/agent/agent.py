@@ -44,6 +44,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         context=None,
         tool_errors: str = "raise",
         extensions=None,
+        retry=None,
     ) -> None:
         if getattr(model, "_operation_owner", None) is not None:
             raise RuntimeError("Cannot attach an Agent to an active Model")
@@ -78,7 +79,7 @@ class Agent(AgentStream, _execution.AgentExecution):
         if tool_errors not in ("raise", "return"):
             raise ValueError("tool_errors must be raise or return")
         self.context, self.tool_errors = context, tool_errors
-        self.extensions, self._outbox = tuple(extensions or ()), []
+        self.extensions, self._outbox, self.retry = tuple(extensions or ()), [], retry
         for extension in self.extensions:
             extension.attach(self)
         if ledger is not None:
@@ -161,9 +162,7 @@ class Agent(AgentStream, _execution.AgentExecution):
             step, reply = next(loop), None
             while True:
                 if step[0] == "model":
-                    reply = self.model.invoke(
-                        None, role=step[1], autorun=False, automem=False, abort=abort, **kwargs
-                    ), True
+                    reply = self._invoke(step[1], abort, kwargs), True
                 else:
                     self._tool_results(step[1].tool_calls, step[1], abort)
                     reply = None

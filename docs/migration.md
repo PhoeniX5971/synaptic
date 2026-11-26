@@ -189,3 +189,9 @@ isolated target, so run it with that host rather than a bare core-only Python in
 - Behaviour change for `tool_errors="return"` (introduced one release ago): a call to an
   unknown tool, or with arguments that fail validation, is now returned to the model
   instead of raising. The default `"raise"` mode is unchanged.
+
+## Retry classification
+
+`transient()` now treats HTTP transport errors (broken or timed-out connections and
+streams) as temporary, so existing `Retry`/`retry` users will see those retried before
+first output. Agents do not retry unless given `retry=`.

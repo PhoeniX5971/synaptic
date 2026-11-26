@@ -430,3 +430,13 @@ before out-of-context ones, which does not affect what is prunable.
 - Per-skill finals are `FinalAnswer` instances named `final_<skill>`, offered once the
   skill is loaded (always, with `preload_tools`, but refused until loaded). Required
   finals of loaded skills produce one refusal naming all of them; any one satisfies it.
+
+## Agent-level retry and transport errors
+
+- `Agent(retry=RetryPolicy)` governs each model step. Sync steps (no visible output
+  until return) may always repeat; streamed steps repeat only if no chunk was received.
+  Cancellation and non-`Exception` errors never repeat. The policy's deadline is measured
+  per model step. A repeated attempt leaves no record in history.
+- `transient()` additionally matches any error with `TransportError` in its class
+  hierarchy (by name). Status-less `APIError` remains non-transient.
+- `synaptic.run` exports `RetryPolicy` and `transient`.
