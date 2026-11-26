@@ -26,6 +26,10 @@ should not depend on the conversation; it serializes for saving and resuming.
 An `Agent` can also compile its own context per request, hand a live run to another
 model, delegate to other agents as tools, and run parallel-safe tools concurrently.
 
+Extensions add opt-in behaviour through one seam: `FinalAnswer` ends a run with a
+validated structured result, `Todos` keeps a plan whose required items must be done
+before finishing, and `Skills` loads instructions and tools only when a task needs them.
+
 `Flow` and `Pipeline` are small workflow helpers for deterministic app logic
 outside the model loop.
 
@@ -54,6 +58,9 @@ from synaptic import (
 - Use `Model(autorun=True)` for one-turn tool execution.
 - Use `Agent.run()` / `Agent.arun()` for multi-turn tool workflows, and
   `Agent.astream()` for the same run with chunks as they arrive.
+- Use `Agent(extensions=[...])` with `FinalAnswer`, `Todos` or `Skills` for structured
+  results, required steps and on-demand capabilities.
+- Use `Agent(retry=RetryPolicy(...))` to repeat model calls that fail before any output.
 - Use `Ledger` to record, store, fork or replay runs.
 - Use `agent.task` for facts about the work, `Agent(context=...)` to choose what the
   model sees, `agent.handoff(model)` to switch models mid-run, and `agent.as_tool(...)`

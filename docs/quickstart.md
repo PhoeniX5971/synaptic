@@ -95,6 +95,7 @@ be isolated.
 
 - [Agent guide](core/agent.md): task state, context, saving and resuming, handoff,
   subagents, and sending tool failures back to the model.
+- [Extensions](core/extensions.md): final answers, todo lists and skills.
 - [Tool guide](core/tool.md): parallel-safe tools and non-English text.
 - [Events](core/streaming-events.md) and the [run ledger](core/ledger.md): observing,
   timing and recording runs.

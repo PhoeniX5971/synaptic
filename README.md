@@ -90,6 +90,8 @@ async for chunk in model.astream("Write a haiku"):
 - `EventBus`: subscribe to agent text/tool/step events, with tool and model latency.
 - `Flow` / `Pipeline`: lightweight sync/async workflow helpers.
 - `Ledger`: append-only record of runs with storage sink, fork, replay and compare.
+- Extensions: `FinalAnswer` (structured result that ends a run), `Todos` (plan with
+  required items) and `Skills` (instructions and tools loaded on demand), or your own.
 - Agent control: task state, context compiler, model handoff, subagents, parallel tools,
   and tool failures returned to the model on request.
 
