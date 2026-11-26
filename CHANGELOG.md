@@ -2,6 +2,7 @@
 
 ## Unreleased — integration qualification
 
+- `Skills` extension: on-demand, composable instruction-and-tool bundles with optional per-skill final results.
 - `Todos` extension: a todo list with required items that gate finishing; cache-friendly placement by default.
 - Extension seam (`Agent(extensions=...)`, `Extension`), runtime `add_tools`/`remove_tools`/`instructions`, and `FinalAnswer` run-ending structured results.
 - `Model(enforce_schema=True)` sends `json_schema` on OpenAI-compatible servers such as vLLM.

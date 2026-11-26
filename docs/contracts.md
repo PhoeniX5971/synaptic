@@ -413,3 +413,20 @@ before out-of-context ones, which does not affect what is prunable.
 - `placement="message"` appends one `user` message through the context projection on
   every request; `"instructions"` appends the rendered list to the instructions. The
   list is never written to history in either mode.
+
+## Skills
+
+- `Skills` state is `Session.extensions["skills"] = {"loaded": [names in load order]}`.
+  Attaching to a session whose loaded names are not among the provided skills raises.
+  A skill with `todos` requires a `Todos` extension on the same agent, checked at attach.
+- `load_skill` (and `Skills.load`) appends the name, adds the skill's todos with ids
+  `<skill>:<n>`, and queues `skill_loaded`. The effect is visible from the next turn
+  because tools and instructions are re-read at each turn boundary. Built-in extension
+  tools are never marked parallel-safe, so each is an ordering barrier in a batch.
+- Tool-name clashes are checked at load time against every tool the agent currently
+  offers, or at attach across all skills when `preload_tools=True`.
+- Instructions are the catalog followed by `## Skill: <name>` sections in load order;
+  earlier text is never modified by a load.
+- Per-skill finals are `FinalAnswer` instances named `final_<skill>`, offered once the
+  skill is loaded (always, with `preload_tools`, but refused until loaded). Required
+  finals of loaded skills produce one refusal naming all of them; any one satisfies it.

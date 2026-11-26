@@ -1,6 +1,7 @@
 from .logging import enable_logging, disable_logging
 from .core.base.base_model import BaseModel, ResponseFormat, ResponseChunk, ToolCallArgsDelta
 from .agent import Agent, EventBus, Session, subagent, Extension, FinalAnswer, Todo, Todos
+from .agent import Skill, Skills
 from .core.base.memory import Memory, ResponseMem, UserMem, History, complete_tool_call
 
 from .core.model import Model
@@ -48,6 +49,8 @@ __all__ = [
     "FinalAnswer",
     "Todo",
     "Todos",
+    "Skill",
+    "Skills",
     "History",
     "Memory",
     "ResponseMem",

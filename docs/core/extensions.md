@@ -82,6 +82,50 @@ system prompt does not change, so provider prompt caching of a large system prom
 working. `Todos(items, placement="instructions")` puts it at the end of the system
 prompt instead, which changes that prompt whenever the list changes.
 
+## Skills
+
+A skill is a named bundle of instructions and tools that the agent loads only when a
+task needs it. The model always sees a short catalog (name and description) and a
+`load_skill` tool; a skill's instructions and tools appear from the turn after it loads.
+
+```python
+review = Skill(
+    name="contract_review",
+    description="Review a contract against a checklist",   # always visible
+    instructions="...long how-to...",                        # visible once loaded
+    tools=[read_clause, check_rule],
+    todos=[Todo("Check against the library", required=True)],
+    final=ReviewResult,            # adds a final_contract_review tool when loaded
+    final_required=True,
+)
+agent = Agent(model, session=session, extensions=[Todos(), Skills([review, figma, house_ui])])
+```
+
+- **Skills compose.** Any number can be loaded in the same run; their instructions are
+  joined in load order and all their tools are available together. There is no single
+  "active" skill.
+- Loading twice does nothing. An unknown name, or a skill whose tool names are already
+  in use, returns an error to the model.
+- A skill's `todos` are added to the todo list when it loads; this needs `Todos()` in
+  the extensions.
+- A skill can carry its own result schema. Its `final_<name>` tool works like
+  `FinalAnswer`; with `final_required=True` the run cannot end in plain text once that
+  skill is loaded. A run still ends with exactly one result: with several loaded skills,
+  the first valid final call wins. Without a required final, plain text ends the run.
+- **Loaded skills stay loaded for the life of the session**, including across
+  `Session.to_dict()` / `from_dict()`. Only the names are saved, so pass the same `Skill`
+  objects again when restoring. There is no unload.
+- Event: `skill_loaded` with the skill's name.
+
+**Prompt caching.** Loading a skill never rewrites existing instruction text: the
+order is your base instructions, the fixed catalog, then each loaded skill appended at
+the end. Put `Skills` last among extensions that add instructions to keep it that way.
+Loading does add the skill's tools, and most providers treat the tool list as part of
+the cached prefix, so expect one cache miss per load. `Skills(skills,
+preload_tools=True)` declares every skill's tools from the first turn instead: the tool
+list then never changes and only instructions load on demand, at the cost of more input
+tokens up front.
+
 ## Events from inside a tool
 
 `agent.events` is the public `EventBus`; subscribe with `agent.on(name, handler)`.
